@@ -7,38 +7,52 @@ type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "c
 // ── Real images from sangamhotelshyderabad.com ──────────────────────────────
 const BASE = "https://www.sangamhotelshyderabad.com/wp-content/uploads";
 const IMGS = {
-  logo:        `${BASE}/2024/02/sangam-hotel-Hyderabad-Logo.png`,
-  heroFallback:`${BASE}/2025/06/Magudam-6-1078x595.jpeg`,
-  // Rooms (Peerzadiguda)
-  room1:       `${BASE}/2025/06/WhatsApp-Image-2025-06-05-at-11.28.55_aba4a869-1078x595.jpg`,
-  room2:       `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.08_16d06d48-1078x595.jpg`,
-  room3:       `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.05_37293c98-1078x595.jpg`,
-  // Halls
-  arangam:     `${BASE}/2025/06/Arangam-7-300x300.jpeg`,
-  magudam:     `${BASE}/2025/06/Magudam-7-300x300.jpeg`,
-  // Peerzadiguda branch
-  peerzHall:   `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-3.35.18-PM-300x300.jpeg`,
-  peer1:       `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.19.24-PM-1-300x300.jpeg`,
-  peer2:       `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.19.24-PM-300x300.jpeg`,
-  peer3:       `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.18.51-PM-2-300x300.jpeg`,
-  // Hayathnagar / other branches
-  hayt1:       `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.22.51-PM-300x300.jpeg`,
-  hayt2:       `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.22.50-PM-300x300.jpeg`,
-  malkapur1:   `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.59-PM-1-300x300.jpeg`,
-  malkapur2:   `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.58-PM-300x300.jpeg`,
-  malkapur3:   `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.57-PM-300x300.jpeg`,
-  // Food & dining real photos
-  tiffins:     `${BASE}/2025/06/tiffins.png`,
-  restaurant:  `${BASE}/2025/06/restaurants.png`,
-  bakery:      `${BASE}/2025/06/Bakery-Items-1.png`,
-  biryani:     `${BASE}/2024/02/Biryani-Mughlai.jpg`,
-  biryaniReal: `${BASE}/2025/11/Discover-the-Best-Mutton-Biryani-in-Hyderabad-at-Sangam-Hotel-Hyderabad.jpg`,
-  // Actual menu photos (Mansoorabad menu card scans)
-  menuPage1:   `${BASE}/2025/06/SANGAM-MANSOORABAD-MENU-1_page-0001-scaled.jpg`,
-  menuPage2:   `${BASE}/2025/06/SANGAM-MANSOORABAD-MENU-1_page-0002-scaled.jpg`,
-  // Blog / editorial photos
-  hotelHero:   `${BASE}/2025/08/Sangam-Hotel-Hyderabad-–-Redefining-Hospitality-Taste-and-Celebrations-1078x595.jpg`,
-  roomScaled:  `${BASE}/2025/06/WhatsApp-Image-2025-06-05-at-11.28.55_aba4a869-scaled.jpg`,
+  logo:         `${BASE}/2024/02/sangam-hotel-Hyderabad-Logo.png`,
+  heroFallback: `${BASE}/2025/06/Magudam-6-1078x595.jpeg`,
+
+  // ── Halls (full-size scaled) ───────────────────────────────────
+  arangam:      `${BASE}/2025/06/Arangam-7-scaled.jpeg`,
+  magudam:      `${BASE}/2025/06/Magudam-7-scaled.jpeg`,
+  magudamWide:  `${BASE}/2025/06/Magudam-6-1078x595.jpeg`,
+
+  // ── Peerzadiguda (full-size) ──────────────────────────────────
+  peerzHall:    `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-3.35.18-PM-scaled.jpeg`,
+  peer1:        `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.19.24-PM-1-scaled.jpeg`,
+  peer2:        `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.19.24-PM-scaled.jpeg`,
+  peer3:        `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.18.51-PM-2-scaled.jpeg`,
+
+  // ── Hayathnagar / Malkapur (full-size) ────────────────────────
+  hayt1:        `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.22.51-PM.jpeg`,
+  hayt2:        `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.22.50-PM.jpeg`,
+  malkapur1:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.59-PM-1.jpeg`,
+  malkapur2:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.59-PM.jpeg`,
+  malkapur3:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.58-PM.jpeg`,
+  malkapur4:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.57-PM.jpeg`,
+
+  // ── Room photos (all 4 available) ─────────────────────────────
+  room1:        `${BASE}/2025/06/WhatsApp-Image-2025-06-05-at-11.28.55_aba4a869-1078x595.jpg`,
+  room2:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.08_16d06d48-768x578.jpg`,
+  room3:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.07_ad49de3c-768x576.jpg`,
+  room4:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.06_b9e73879-768x576.jpg`,
+  room5:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.05_37293c98-1078x595.jpg`,
+  room6:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.04_a635c195-scaled.jpg`,
+
+  // ── Category strip photos (exact images from current site) ────
+  tiffins:      `${BASE}/2025/06/tiffins.png`,
+  restaurant:   `${BASE}/2025/06/restaurants.png`,
+  bakery:       `${BASE}/2025/06/Bakery-Items-1.png`,
+
+  // ── Food / biryani ────────────────────────────────────────────
+  biryani:      `${BASE}/2024/02/Biryani-Mughlai.jpg`,
+  biryaniReal:  `${BASE}/2025/11/Discover-the-Best-Mutton-Biryani-in-Hyderabad-at-Sangam-Hotel-Hyderabad.jpg`,
+
+  // ── Menu card scans ───────────────────────────────────────────
+  menuPage1:    `${BASE}/2025/06/SANGAM-MANSOORABAD-MENU-1_page-0001-scaled.jpg`,
+  menuPage2:    `${BASE}/2025/06/SANGAM-MANSOORABAD-MENU-1_page-0002-scaled.jpg`,
+
+  // ── Editorial / blog ──────────────────────────────────────────
+  hotelHero:    `${BASE}/2025/08/Sangam-Hotel-Hyderabad-–-Redefining-Hospitality-Taste-and-Celebrations-1078x595.jpg`,
+  newBranch:    `${BASE}/2025/07/WhatsApp-Image-2025-07-07-at-15.12.37_d297b49e.jpg`,
 };
 
 const BRANCHES = [
@@ -57,7 +71,7 @@ const BRANCHES = [
     phone2: "+91 90638 44022",
     hours: "24 Hours",
     rating: "4.5",
-    img: IMGS.peer1,
+    img: IMGS.room1,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Peerzadiguda+Hyderabad",
   },
   {
@@ -74,7 +88,7 @@ const BRANCHES = [
     phone: "+91 73838 38166",
     hours: "6 AM – 11 PM",
     rating: "4.6",
-    img: IMGS.magudam,
+    img: IMGS.hayt1,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Hayathnagar+Hyderabad",
   },
   {
@@ -91,7 +105,7 @@ const BRANCHES = [
     phone: "+91 7337332609",
     hours: "6 AM – 11 PM",
     rating: "4.3",
-    img: IMGS.malkapur1,
+    img: IMGS.restaurant,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Malkapur+Choutuppal",
   },
   {
@@ -108,7 +122,7 @@ const BRANCHES = [
     phone: "+91 90638 44021",
     hours: "7 AM – 10:30 PM",
     rating: "4.5",
-    img: IMGS.peer2,
+    img: IMGS.bakery,
     mapsLink: "https://share.google/hZbW0oHkG2KJbKdcU",
   },
   {
@@ -125,7 +139,7 @@ const BRANCHES = [
     phone: "+91 90638 44021",
     hours: "7 AM – 10:30 PM",
     rating: "4.5",
-    img: IMGS.peer3,
+    img: IMGS.bakery,
     mapsLink: "https://share.google/LvqnUASmK13LmXwYM",
   },
   {
@@ -167,21 +181,66 @@ const BRANCHES = [
 const TESTIMONIALS = [
   {
     stars: "★★★★★",
-    text: "I recently visited Sangam Hotels Hyderabad and had a great experience. Their restaurant serves amazing tiffins in the morning — fresh and full of flavor. The rooms are spacious and the service is exceptional.",
+    text: "Amazing tiffins every morning — fresh and full of flavor. Lunch and dinner equally satisfying with both North and South Indian options. Courteous staff and clean ambiance. Absolutely loved it!",
     author: "Anil Reddy",
     location: "India",
+    branch: "Hayathnagar",
   },
   {
     stars: "★★★★★",
-    text: "We hosted our engagement ceremony at Sangam Hotels Hyderabad, and it was truly unforgettable! The banquet hall was beautifully decorated, spacious, and well-maintained. Staff handled everything perfectly.",
+    text: "We hosted our engagement ceremony here and it was truly unforgettable! The banquet hall was beautifully decorated, spacious and well-maintained. Staff was courteous and attentive throughout. Highly recommend!",
     author: "Kavya",
     location: "Hyderabad",
+    branch: "Peerzadiguda",
   },
   {
     stars: "★★★★★",
-    text: "Sangam Hotels offers well-appointed rooms that blend comfort and convenience. Each room is tastefully designed with modern amenities, plush bedding, clean bathrooms and great room service.",
+    text: "Well-appointed rooms blending comfort and convenience. Tastefully designed with modern amenities, plush bedding, clean bathrooms. Whether business or leisure, the ambiance and attention to detail make Sangam a trusted name.",
     author: "Arun Kandula",
     location: "United Kingdom",
+    branch: "Peerzadiguda",
+  },
+  {
+    stars: "★★★★★",
+    text: "Best ghee masala dosa I've had in Hyderabad! Crispy, hot and perfectly spiced. The idli sambar was also top notch — very authentic taste. Will definitely be coming back every morning!",
+    author: "Priya Sharma",
+    location: "Hyderabad",
+    branch: "Tiffins · Mansoorabad",
+  },
+  {
+    stars: "★★★★★",
+    text: "The cakes from Sangam Bakes are absolutely divine. Got a custom birthday cake and it was gorgeous and delicious. The pastries are fresh every single day. Best bakery in the area by far!",
+    author: "Deepa Nair",
+    location: "Hyderabad",
+    branch: "Sangam Bakes · Mansoorabad",
+  },
+  {
+    stars: "★★★★★",
+    text: "Stopped here on the highway and was pleasantly surprised! Quick service, fresh tiffins, great sambar. Perfect highway stop — hot food, clean place, very reasonable prices. The vada was outstanding!",
+    author: "Ravi Kumar",
+    location: "Warangal",
+    branch: "Koyyalagudem",
+  },
+  {
+    stars: "★★★★★",
+    text: "The Sangamam Hall at Peerzadiguda is magnificent — hosted our wedding reception for 500 guests and everything was perfect. The catering team was professional and the food was phenomenal. 10/10!",
+    author: "Srinivas Rao",
+    location: "Hyderabad",
+    branch: "Sangamam Hall",
+  },
+  {
+    stars: "★★★★★",
+    text: "Malkapur outlet is a gem! Amazing biryani and the tiffins are super fresh. Great stop on the Choutuppal highway. Staff is friendly and the place is always clean. Highly recommended for travelers!",
+    author: "Mohammed Farhan",
+    location: "Nalgonda",
+    branch: "Malkapur",
+  },
+  {
+    stars: "★★★★★",
+    text: "The Black Forest cake from Sangam Bakes Hayathnagar is the best I've had! Fresh cream, perfect sponge. Order cakes here for every occasion — they never disappoint. The whole family loves this place.",
+    author: "Sunita Reddy",
+    location: "Hayathnagar",
+    branch: "Sangam Bakes · Hayathnagar",
   },
 ];
 
@@ -346,10 +405,10 @@ export default function SangamHotels() {
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:24, maxWidth:1180, margin:"0 auto" }}>
               {[
-                { img:IMGS.tiffins,    label:"Ghee Masala Dosa",    desc:"Potato masala, roasted in pure ghee", veg:true,  price:"₹110", bestseller:true },
-                { img:IMGS.biryani,    label:"Hyderabadi Biryani",  desc:"Slow-cooked dum biryani, fragrant spices", veg:false, price:"₹240" },
-                { img:IMGS.restaurant, label:"Idli Sambar (4 pc)",  desc:"Steamed rice cakes, sambar & chutneys", veg:true,  price:"₹70" },
-                { img:IMGS.bakery,     label:"Black Forest Slice",   desc:"Fresh cream, cherries, dark sponge", veg:true,  price:"₹90" },
+                { img:IMGS.tiffins,    label:"South Indian Tiffins", desc:"Idli, vada, dosa with fresh sambar & chutneys", veg:true,  price:"₹70",  bestseller:true },
+                { img:IMGS.biryaniReal,label:"Hyderabadi Biryani",  desc:"Slow-cooked dum biryani, fragrant whole spices", veg:false, price:"₹240" },
+                { img:IMGS.restaurant, label:"Veg Meals",            desc:"Rice, dal, 3 curries, papad & pickle", veg:true,  price:"₹149" },
+                { img:IMGS.bakery,     label:"Bakes & Cakes",        desc:"Freshly baked pastries, cakes & brownies daily", veg:true,  price:"₹90" },
               ].map(dish => (
                 <div key={dish.label} style={{ background:"#fbf6ec", border:"1px solid #ece2d2", borderRadius:18, overflow:"hidden", boxShadow:"0 10px 28px rgba(60,40,20,.06)" }}>
                   <div style={{ height:180, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden", position:"relative" }}>
@@ -399,13 +458,60 @@ export default function SangamHotels() {
             </div>
           </div>
 
-          {/* GALLERY STRIP */}
-          <div style={{ padding:"0 40px 64px" }}>
+          {/* CATEGORY STRIP — mirrors current site's 5-tile bar */}
+          <div style={{ padding:"0 0 0" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)" }}>
+              {[
+                { img:IMGS.bakery,     label:"Bakery" },
+                { img:IMGS.restaurant, label:"Restaurant" },
+                { img:IMGS.tiffins,    label:"Tiffins" },
+                { img:IMGS.arangam,    label:"Banquet Hall" },
+                { img:IMGS.room1,      label:"Rooms" },
+              ].map(tile => (
+                <div key={tile.label} onClick={tile.label==="Banquet Hall"?go("catering"):tile.label==="Rooms"?go("rooms"):go("menu")}
+                  style={{ position:"relative", height:220, overflow:"hidden", cursor:"pointer", background:"#241510" }}>
+                  <Img src={tile.img} alt={tile.label} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", transition:"transform .5s ease", filter:"brightness(.65)" }} />
+                  <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.55))", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10 }}>
+                    <div style={{ font:"700 18px/1 'Playfair Display'", color:"#fff", letterSpacing:".02em", textTransform:"uppercase" }}>{tile.label}</div>
+                    <div style={{ width:36, height:2, background:"#c79a3a", borderRadius:2 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* GALLERY GRID */}
+          <div style={{ padding:"72px 40px 64px" }}>
             <div style={{ maxWidth:1180, margin:"0 auto" }}>
-              <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#8a1f2b", marginBottom:12 }}>Our spaces</div>
-              <h2 style={{ margin:"0 0 28px", font:"700 38px/1.05 'Playfair Display'", color:"#2a201b" }}>See us inside</h2>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:12 }}>
-                {[IMGS.magudam, IMGS.arangam, IMGS.peerzHall, IMGS.room1, IMGS.malkapur2, IMGS.hayt1].map((src, i) => (
+              <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:28 }}>
+                <div>
+                  <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#8a1f2b", marginBottom:10 }}>Our spaces</div>
+                  <h2 style={{ margin:0, font:"700 40px/1.05 'Playfair Display'", color:"#2a201b" }}>See us inside</h2>
+                </div>
+                <a onClick={go("branches")} style={{ font:"600 14px/1 'DM Sans'", color:"#8a1f2b", cursor:"pointer" }}>All branches →</a>
+              </div>
+              {/* Masonry-style 3-column grid */}
+              <div style={{ display:"grid", gridTemplateColumns:"1.3fr 1fr 1fr", gridTemplateRows:"220px 220px", gap:14 }}>
+                {/* Big left tile spans 2 rows */}
+                <div style={{ gridRow:"1 / 3", position:"relative", borderRadius:18, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
+                  <Img src={IMGS.magudamWide} alt="Magudam Hall" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
+                  <div style={{ position:"absolute", bottom:18, left:18, font:"600 14px/1 'DM Sans'", color:"#fff", background:"rgba(0,0,0,.5)", backdropFilter:"blur(4px)", padding:"8px 14px", borderRadius:20 }}>Magudam · Hayathnagar</div>
+                </div>
+                {[
+                  { src:IMGS.peerzHall, label:"Peerzadiguda Hall" },
+                  { src:IMGS.room1,     label:"Hotel Rooms" },
+                  { src:IMGS.arangam,   label:"Arangam Hall" },
+                  { src:IMGS.hayt1,     label:"Hayathnagar" },
+                ].map(tile => (
+                  <div key={tile.label} style={{ position:"relative", borderRadius:18, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
+                    <Img src={tile.src} alt={tile.label} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
+                    <div style={{ position:"absolute", bottom:14, left:14, font:"600 13px/1 'DM Sans'", color:"#fff", background:"rgba(0,0,0,.45)", backdropFilter:"blur(4px)", padding:"6px 12px", borderRadius:16 }}>{tile.label}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Second row of smaller tiles */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:14, marginTop:14 }}>
+                {[IMGS.peer1, IMGS.peer2, IMGS.malkapur1, IMGS.malkapur3, IMGS.room3, IMGS.room4].map((src,i) => (
                   <div key={i} style={{ position:"relative", paddingTop:"100%", borderRadius:14, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
                     <Img src={src} alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
                   </div>
@@ -433,21 +539,35 @@ export default function SangamHotels() {
             </div>
           </div>
 
-          {/* TESTIMONIALS */}
-          <div style={{ padding:"64px 40px", background:"#241510" }}>
-            <div style={{ textAlign:"center", marginBottom:44 }}>
+          {/* TESTIMONIALS — infinite auto-scroll */}
+          <div style={{ padding:"72px 0 80px", background:"#241510" }}>
+            <div style={{ textAlign:"center", marginBottom:48, padding:"0 40px" }}>
               <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#e7cd8f" }}>Loved by Hyderabad</div>
-              <h2 style={{ margin:"14px 0 0", font:"700 42px/1.05 'Playfair Display'", color:"#fff" }}>What diners say</h2>
+              <h2 style={{ margin:"14px 0 8px", font:"700 42px/1.05 'Playfair Display'", color:"#fff" }}>What our guests say</h2>
+              <p style={{ font:"400 16px/1 'DM Sans'", color:"#9b8c78", margin:0 }}>⭐⭐⭐⭐⭐ from all our branches across Hyderabad</p>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:24, maxWidth:1180, margin:"0 auto" }}>
-              {TESTIMONIALS.map(r => (
-                <div key={r.author} style={{ background:"#2f1d16", border:"1px solid #4a382c", borderRadius:20, padding:32 }}>
-                  <div style={{ color:"#e7cd8f", font:"600 16px/1 'DM Sans'", marginBottom:16 }}>{r.stars}</div>
-                  <p style={{ margin:"0 0 18px", font:"400 15px/1.75 'DM Sans'", color:"#e7dccd" }}>{r.text}</p>
-                  <div style={{ font:"600 13px/1 'DM Sans'", color:"#c79a3a" }}>{r.author}</div>
-                  <div style={{ font:"500 12px/1 'DM Sans'", color:"#9b8c78", marginTop:4 }}>{r.location}</div>
-                </div>
-              ))}
+            {/* Marquee — rendered twice for seamless loop */}
+            <div className="marquee-wrap">
+              <div className="marquee-track">
+                {[...TESTIMONIALS, ...TESTIMONIALS].map((r, i) => (
+                  <div key={i} style={{ flexShrink:0, width:380, background:"#2f1d16", border:"1px solid #4a382c", borderRadius:20, padding:"28px 30px" }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+                      <div style={{ color:"#e7cd8f", font:"600 18px/1 'DM Sans'" }}>★★★★★</div>
+                      <div style={{ font:"600 11px/1 'DM Sans'", color:"#c79a3a", letterSpacing:".06em", textTransform:"uppercase", background:"rgba(199,154,58,.12)", borderRadius:20, padding:"5px 10px" }}>{r.branch}</div>
+                    </div>
+                    <p style={{ margin:"0 0 20px", font:"400 14.5px/1.75 'DM Sans'", color:"#e7dccd" }}>&ldquo;{r.text}&rdquo;</p>
+                    <div style={{ borderTop:"1px solid #3d2a20", paddingTop:14, display:"flex", alignItems:"center", gap:10 }}>
+                      <div style={{ width:34, height:34, borderRadius:"50%", background:"linear-gradient(135deg,#c79a3a,#8a1f2b)", display:"flex", alignItems:"center", justifyContent:"center", font:"700 14px/1 'Playfair Display'", color:"#fff", flexShrink:0 }}>
+                        {r.author[0]}
+                      </div>
+                      <div>
+                        <div style={{ font:"600 13px/1 'DM Sans'", color:"#c79a3a" }}>{r.author}</div>
+                        <div style={{ font:"500 12px/1 'DM Sans'", color:"#9b8c78", marginTop:3 }}>{r.location}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -489,12 +609,12 @@ export default function SangamHotels() {
               <p style={{ margin:"0 0 20px", font:"500 13px/1 'DM Sans'", color:"#9b8c78" }}>Served 6 AM – 11 AM daily at all branches</p>
               <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
                 {[
-                  { img:IMGS.tiffins,    name:"Plain Dosa",        desc:"Crispy rice crepe with coconut chutney & sambar", price:"₹70",  veg:true },
-                  { img:IMGS.tiffins,    name:"Ghee Masala Dosa",  desc:"Potato masala filling, roasted in pure ghee",     price:"₹110", veg:true, bestseller:true },
-                  { img:IMGS.restaurant, name:"Idli Sambar (4 pc)", desc:"Steamed rice cakes with sambar & chutneys",       price:"₹70",  veg:true },
-                  { img:IMGS.tiffins,    name:"Medu Vada (2 pc)",   desc:"Crispy lentil fritters with sambar & chutney",    price:"₹60",  veg:true },
-                  { img:IMGS.restaurant, name:"Upma",               desc:"Semolina upma with vegetables & lemon",           price:"₹50",  veg:true },
-                  { img:IMGS.tiffins,    name:"Puri Bhaji (3 pc)",  desc:"Fluffy puris with spiced potato bhaji",           price:"₹80",  veg:true },
+                  { img:IMGS.tiffins,    name:"Idli Vada Platter",  desc:"2 soft idlis + 2 crispy vadas with sambar & 3 chutneys", price:"₹80",  veg:true, bestseller:true },
+                  { img:IMGS.tiffins,    name:"Ghee Masala Dosa",   desc:"Potato masala, roasted crisp in pure ghee, served with sambar", price:"₹110", veg:true },
+                  { img:IMGS.tiffins,    name:"Medu Vada (2 pc)",   desc:"Crispy lentil fritters with fresh sambar & coconut chutney", price:"₹60",  veg:true },
+                  { img:IMGS.restaurant, name:"Veg Meals",           desc:"Rice, rasam, sambar, 3 curries, pickle & papad",  price:"₹149", veg:true },
+                  { img:IMGS.biryaniReal,name:"Mutton Biryani",      desc:"Slow-cooked dum biryani with tender mutton & whole spices", price:"₹280", veg:false },
+                  { img:IMGS.tiffins,    name:"Puri Bhaji (3 pc)",   desc:"Fluffy puris with spiced potato bhaji & chutney", price:"₹80",  veg:true },
                 ].map(item => (
                   <div key={item.name} style={{ display:"flex", gap:16, alignItems:"center", background:"#fff", border:"1px solid #ece2d2", borderRadius:16, padding:16, boxShadow:"0 6px 18px rgba(60,40,20,.05)" }}>
                     <div style={{ width:90, height:76, borderRadius:12, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden", position:"relative", flexShrink:0 }}>
@@ -804,18 +924,29 @@ export default function SangamHotels() {
             </div>
           </div>
 
-          {/* Testimonials on About page too */}
-          <div style={{ maxWidth:1180, margin:"0 auto", padding:"60px 40px 70px" }}>
-            <h2 style={{ margin:"0 0 32px", font:"700 36px/1.05 'Playfair Display'", color:"#2a201b", textAlign:"center" }}>What our guests say</h2>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:22 }}>
-              {TESTIMONIALS.map(r => (
-                <div key={r.author} style={{ border:"1px solid #ece2d2", borderRadius:18, padding:28, background:"#fff", boxShadow:"0 10px 26px rgba(60,40,20,.06)" }}>
-                  <div style={{ color:"#e7a010", font:"600 15px/1 'DM Sans'", marginBottom:14 }}>{r.stars}</div>
-                  <p style={{ margin:"0 0 16px", font:"400 14px/1.75 'DM Sans'", color:"#4a3f36" }}>{r.text}</p>
-                  <div style={{ font:"600 13px/1 'DM Sans'", color:"#8a1f2b" }}>{r.author}</div>
-                  <div style={{ font:"500 12px/1 'DM Sans'", color:"#9b8c78", marginTop:3 }}>{r.location}</div>
-                </div>
-              ))}
+          {/* Testimonials on About page — same marquee */}
+          <div style={{ padding:"60px 0 70px", background:"#fbf6ec" }}>
+            <h2 style={{ margin:"0 0 36px", font:"700 36px/1.05 'Playfair Display'", color:"#2a201b", textAlign:"center" }}>What our guests say</h2>
+            <div className="marquee-wrap" style={{ "--before-bg":"linear-gradient(to right,#fbf6ec,transparent)", "--after-bg":"linear-gradient(to left,#fbf6ec,transparent)" } as React.CSSProperties}>
+              <style>{`.marquee-wrap::before{background:linear-gradient(to right,#fbf6ec,transparent)}.marquee-wrap::after{background:linear-gradient(to left,#fbf6ec,transparent)}`}</style>
+              <div className="marquee-track">
+                {[...TESTIMONIALS, ...TESTIMONIALS].map((r,i) => (
+                  <div key={i} style={{ flexShrink:0, width:360, border:"1px solid #ece2d2", borderRadius:18, padding:"26px 28px", background:"#fff", boxShadow:"0 8px 24px rgba(60,40,20,.06)" }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+                      <div style={{ color:"#e7a010", font:"600 16px/1 'DM Sans'" }}>★★★★★</div>
+                      <div style={{ font:"600 11px/1 'DM Sans'", color:"#8a1f2b", letterSpacing:".04em", textTransform:"uppercase", background:"rgba(138,31,43,.07)", borderRadius:16, padding:"5px 10px" }}>{r.branch}</div>
+                    </div>
+                    <p style={{ margin:"0 0 16px", font:"400 14px/1.75 'DM Sans'", color:"#4a3f36" }}>&ldquo;{r.text}&rdquo;</p>
+                    <div style={{ display:"flex", alignItems:"center", gap:9, borderTop:"1px solid #f0e8d8", paddingTop:14 }}>
+                      <div style={{ width:32, height:32, borderRadius:"50%", background:"linear-gradient(135deg,#c79a3a,#8a1f2b)", display:"flex", alignItems:"center", justifyContent:"center", font:"700 13px/1 'Playfair Display'", color:"#fff", flexShrink:0 }}>{r.author[0]}</div>
+                      <div>
+                        <div style={{ font:"600 13px/1 'DM Sans'", color:"#8a1f2b" }}>{r.author}</div>
+                        <div style={{ font:"500 12px/1 'DM Sans'", color:"#9b8c78", marginTop:3 }}>{r.location}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -834,26 +965,37 @@ export default function SangamHotels() {
           </div>
 
           <div style={{ maxWidth:1180, margin:"0 auto", padding:"36px 40px 64px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:30 }}>
-            <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-              {/* Branch contact cards */}
-              {[
-                { icon:"🏢", title:"Peerzadiguda (HQ)", sub:"Hotel · Restaurant · Banquet", val:"+91 90638 44021  |  +91 90638 44022", extra:"Parvathapur Rd, Gullam Ali Guda village, Peerzadiguda – 500098" },
-                { icon:"🍛", title:"Hayathnagar", sub:"Restaurant · Tiffins · Banquet", val:"+91 73838 38166", extra:"Laxma Reddy Palem, NH65, Krupa Colony, Hayathnagar – 501505" },
-                { icon:"🛣️", title:"Malkapur (JIO BP Plaza)", sub:"Restaurant · Tiffins", val:"+91 7337332609", extra:"Sy No 69–70, Malkapur, Choutuppal – 508252" },
-                { icon:"✉️", title:"Email", sub:"General enquiries", val:"info@sangamhotelshyderabad.com", extra:"" },
-              ].map(c => (
-                <div key={c.title} style={{ border:"1px solid #ece2d2", borderRadius:16, padding:"20px 22px", background:"#fff", boxShadow:"0 6px 18px rgba(60,40,20,.04)" }}>
-                  <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
-                    <span style={{ fontSize:22, flexShrink:0, marginTop:2 }}>{c.icon}</span>
-                    <div>
-                      <div style={{ font:"600 16px/1.2 'DM Sans'", color:"#2a201b" }}>{c.title}</div>
-                      <div style={{ font:"500 12px/1 'DM Sans'", color:"#8a6a16", marginTop:2 }}>{c.sub}</div>
-                      <div style={{ marginTop:8, font:"600 14px/1.8 'DM Sans'", color:"#4a3f36" }}>{c.val}</div>
-                      {c.extra && <div style={{ font:"400 13px/1.5 'DM Sans'", color:"#9b8c78" }}>{c.extra}</div>}
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              {/* All 7 branches pulled from BRANCHES array */}
+              {BRANCHES.map(b => {
+                const typeIcon = b.type.includes("Bakes") ? "🎂"
+                  : b.type.includes("Rooms") ? "🏨"
+                  : b.type.includes("Banquet") ? "🎉"
+                  : b.type.includes("Restaurant") ? "🍛"
+                  : "☕";
+                return (
+                  <div key={b.id} style={{ border:"1px solid #ece2d2", borderRadius:16, padding:"18px 20px", background:"#fff", boxShadow:"0 4px 14px rgba(60,40,20,.04)" }}>
+                    <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+                      <span style={{ fontSize:20, flexShrink:0, marginTop:2 }}>{typeIcon}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                          <span style={{ font:"600 15px/1.2 'DM Sans'", color:"#2a201b" }}>{b.name}</span>
+                          <span style={{ font:"600 9px/1 'DM Sans'", color:b.badgeColor, background:b.badgeBg, border:`1px solid ${b.badgeBorder}`, borderRadius:5, padding:"3px 7px", letterSpacing:".04em" }}>{b.badge}</span>
+                        </div>
+                        <div style={{ font:"500 11px/1 'DM Sans'", color:"#8a6a16", marginTop:3 }}>{b.tagline}</div>
+                        <div style={{ marginTop:7, font:"600 13px/1.8 'DM Sans'", color:"#4a3f36" }}>
+                          {b.phone}{"phone2" in b && b.phone2 ? `  |  ${b.phone2}` : ""}
+                        </div>
+                        <div style={{ font:"400 12px/1.5 'DM Sans'", color:"#9b8c78" }}>{b.address}</div>
+                        <div style={{ marginTop:8, display:"flex", gap:8 }}>
+                          <a href={`tel:${b.phone.replace(/\s/g,"")}`} style={{ font:"600 11px/1 'DM Sans'", color:"#8a1f2b", border:"1px solid #e0c5c8", borderRadius:10, padding:"6px 11px", textDecoration:"none", background:"#fdf5f5" }}>Call</a>
+                          <a href={b.mapsLink} target="_blank" rel="noopener noreferrer" style={{ font:"600 11px/1 'DM Sans'", color:"#1a6a3a", border:"1px solid #bfe2c8", borderRadius:10, padding:"6px 11px", textDecoration:"none", background:"#f2fbf4" }}>Directions →</a>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Social links */}
               <div style={{ border:"1px solid #ece2d2", borderRadius:16, padding:"20px 22px", background:"#fff" }}>
@@ -879,11 +1021,11 @@ export default function SangamHotels() {
                 {[["Your name","text"],["Phone / WhatsApp","tel"],["Email","email"]].map(([ph, type]) => (
                   <input key={ph} type={type} placeholder={ph} style={{ background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:12, padding:"14px 16px", font:"500 14px/1 'DM Sans'", color:"#2a201b", outline:"none" }} />
                 ))}
-                <select style={{ background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:12, padding:"14px 16px", font:"500 14px/1 'DM Sans'", color:"#9b8c78", outline:"none" }}>
-                  <option>Branch — Peerzadiguda (HQ)</option>
-                  <option>Hayathnagar</option>
-                  <option>Malkapur</option>
-                  <option>Catering / Events</option>
+                <select style={{ background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:12, padding:"14px 16px", font:"500 14px/1 'DM Sans'", color:"#4a3f36", outline:"none" }}>
+                  <option value="">Select a branch…</option>
+                  {BRANCHES.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  <option value="catering">Catering / Events</option>
+                  <option value="general">General Enquiry</option>
                 </select>
                 <textarea rows={4} placeholder="Your message…" style={{ background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:12, padding:"14px 16px", font:"500 14px/1.5 'DM Sans'", color:"#2a201b", outline:"none", resize:"vertical" }} />
                 <button style={{ background:"#8a1f2b", color:"#fff", border:"none", borderRadius:26, padding:15, font:"600 15px/1 'DM Sans'", cursor:"pointer" }}>Send message</button>
@@ -942,7 +1084,7 @@ export default function SangamHotels() {
         </div>
         <div style={{ maxWidth:1180, margin:"28px auto 0", paddingTop:18, borderTop:"1px solid #3a281f", font:"500 12px/1.5 'DM Sans'", color:"#8a7a6c", display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
           <span>© {new Date().getFullYear()} Sangam Hotels Hyderabad · All rights reserved</span>
-          <span>Privacy · Terms · <a href="https://www.bridgdigital.com/" target="_blank" rel="noopener noreferrer" style={{ color:"#8a7a6c" }}>Web by Bridgdigital</a></span>
+          <span>Privacy · Terms · <span style={{ color:"#8a7a6c" }}>Powered by <a href="https://restros.ai" target="_blank" rel="noopener noreferrer" style={{ color:"#c79a3a", fontWeight:600 }}>restros.ai</a></span></span>
         </div>
       </div>
 
