@@ -21,6 +21,11 @@ export const metadata: Metadata = {
   title: "Sangam Hotels Hyderabad — Authentic South Indian Food & Stays",
   description:
     "Fresh South Indian tiffins, meals, bakery & banquets across 5 Hyderabad locations. Order online, book catering, or stay with us.",
+  icons: {
+    icon: '/sangam-icon.png',
+    shortcut: '/sangam-icon.png',
+    apple: '/sangam-icon.png',
+  },
 };
 
 export default function RootLayout({
