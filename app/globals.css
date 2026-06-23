@@ -106,6 +106,19 @@ body { background: #fbf6ec; -webkit-font-smoothing: antialiased; color: #2a201b;
   .cat-strip { grid-template-columns: repeat(3,1fr); }
 }
 
+/* ── New section headings ──────────────────────────── */
+.h-xl { font: 800 48px/1.06 'Playfair Display'; }
+.h-lg { font: 800 44px/1.08 'Playfair Display'; }
+.h-md { font: 700 42px/1.05 'Playfair Display'; }
+.video-badge { position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; background: rgba(10,6,3,.8); backdrop-filter: blur(12px); border: 1px solid rgba(199,154,58,.3); border-radius: 40px; padding: 14px 28px; white-space: nowrap; }
+.cooking-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; max-width: 1180px; margin: 0 auto; }
+.catering-inner { padding: 52px 54px; background: #fff; }
+
+@media (max-width: 1024px) {
+  .cooking-grid { gap: 32px; }
+  .catering-inner { padding: 36px 32px; }
+}
+
 /* ── MOBILE (max 768px) ─────────────────────────────── */
 @media (max-width: 768px) {
   /* Utility strip */
@@ -174,4 +187,23 @@ body { background: #fbf6ec; -webkit-font-smoothing: antialiased; color: #2a201b;
 
   /* Branches filter */
   .branch-filters { overflow-x: auto; flex-wrap: nowrap !important; padding-bottom: 8px; }
+
+  /* New section headings */
+  .h-xl { font-size: 30px !important; line-height: 1.15 !important; }
+  .h-lg { font-size: 28px !important; line-height: 1.15 !important; }
+  .h-md { font-size: 26px !important; line-height: 1.2 !important; }
+
+  /* Malkapur video badge — simplified on mobile */
+  .video-badge { bottom: 16px; padding: 10px 16px; gap: 10px; border-radius: 24px; white-space: normal; flex-wrap: wrap; justify-content: center; left: 16px; right: 16px; transform: none; width: auto; }
+  .video-badge-sep, .video-badge-loc { display: none; }
+
+  /* Cooking video grid */
+  .cooking-grid { grid-template-columns: 1fr; gap: 28px; }
+
+  /* Catering inner padding */
+  .catering-inner { padding: 28px 20px; }
+
+  /* Malkapur separator text */
+  .malkapur-badge-text { display: none; }
+  .malkapur-stats { gap: 20px !important; }
 }

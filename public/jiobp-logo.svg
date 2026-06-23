@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Green background -->
+  <rect width="200" height="200" fill="#009A44" rx="16"/>
+
+  <!-- White Jio circle -->
+  <circle cx="62" cy="100" r="44" fill="white"/>
+
+  <!-- Jio wordmark inside circle -->
+  <text x="62" y="95" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="22" fill="#003087" letter-spacing="-1">Jio</text>
+  <!-- Red underline accent -->
+  <rect x="38" y="100" width="48" height="3.5" fill="#E31837" rx="1.5"/>
+
+  <!-- White vertical divider -->
+  <rect x="112" y="62" width="2.5" height="76" fill="white" rx="1.25" opacity="0.85"/>
+
+  <!-- bp text -->
+  <text x="150" y="118" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="28" fill="white" letter-spacing="-0.5">bp</text>
+
+  <!-- BP sunflower/helios mark (simplified) -->
+  <g transform="translate(150,72) scale(0.9)">
+    <!-- Petals radiating from center -->
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(0)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(30)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(60)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(90)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(120)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(150)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(180)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(210)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(240)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(270)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(300)"/>
+    <ellipse cx="0" cy="-16" rx="5" ry="9" fill="white" opacity="0.9" transform="rotate(330)"/>
+    <circle cx="0" cy="0" r="8" fill="#009A44"/>
+  </g>
+</svg>

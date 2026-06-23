@@ -105,7 +105,7 @@ const BRANCHES = [
     phone: "+91 7337332609",
     hours: "6 AM – 11 PM",
     rating: "4.3",
-    img: IMGS.restaurant,
+    img: "/malkapur-exterior-1.jpg",
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Malkapur+Choutuppal",
   },
   {
@@ -373,6 +373,61 @@ export default function SangamHotels() {
             <span style={{ color:"#e7cd8f" }}>⭐ Loved across Hyderabad since 2022</span>
           </div>
 
+          {/* ── MALKAPUR SEPARATOR — highway pride messaging ─────── */}
+          <div style={{ background:"#0a0603", padding:"52px 20px", textAlign:"center" }}>
+            <div style={{ maxWidth:820, margin:"0 auto" }}>
+              <div style={{ display:"inline-flex", alignItems:"center", gap:10, background:"rgba(0,154,68,.12)", border:"1px solid rgba(0,154,68,.35)", borderRadius:30, padding:"10px 18px", marginBottom:22, flexWrap:"wrap", justifyContent:"center" }}>
+                <img src="/jiobp-logo.svg" alt="Jio-BP" style={{ height:26, width:"auto", display:"block", borderRadius:5, flexShrink:0 }} />
+                <span className="malkapur-badge-text" style={{ font:"700 11px/1.3 'DM Sans'", color:"#00c85a", letterSpacing:".08em", textTransform:"uppercase" }}>Reliance-Certified Highway Partner · JIO BP Plaza, NH65</span>
+              </div>
+              <h2 className="h-xl" style={{ margin:"0 0 16px", color:"#fff" }}>
+                Proudly serving India's<br />
+                <span style={{ color:"#c79a3a", fontStyle:"italic" }}>highway travellers</span>
+              </h2>
+              <p style={{ margin:"0 auto 20px", font:"400 17px/1.75 'DM Sans'", color:"#a99c8c", maxWidth:640 }}>
+                Sangam Hotels Malkapur is our boldest venture yet — a full-service destination on NH65 with a restaurant, rooms, banquet halls and a marriage hall. And we're just getting started.
+              </p>
+              <div style={{ font:"500 15px/1.6 'DM Sans'", color:"#c79a3a", fontStyle:"italic" }}>
+                "Resort-level expansion in progress — watch this space."
+              </div>
+              <div className="malkapur-stats" style={{ display:"flex", justifyContent:"center", gap:36, marginTop:32, flexWrap:"wrap" }}>
+                {[
+                  { num:"NH65", label:"Prime highway location" },
+                  { num:"4", label:"Floors of hospitality" },
+                  { num:"∞", label:"Growth in progress" },
+                ].map(s => (
+                  <div key={s.label} style={{ textAlign:"center" }}>
+                    <div style={{ font:"800 32px/1 'Playfair Display'", color:"#c79a3a" }}>{s.num}</div>
+                    <div style={{ font:"500 12px/1.4 'DM Sans'", color:"#6b5e52", marginTop:6, textTransform:"uppercase", letterSpacing:".08em" }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── MALKAPUR BRANCH VIDEO — full-width cinematic ───────── */}
+          <div style={{ position:"relative", background:"#000", lineHeight:0 }}>
+            <video autoPlay loop muted playsInline
+              style={{ width:"100%", display:"block", maxHeight:600, objectFit:"cover" }}
+              poster="/malkapur-exterior-2.jpg">
+              <source src="/malkapur-showcase-web.mp4" type="video/mp4" />
+            </video>
+            {/* Bottom gradient for smooth transition to next section */}
+            <div style={{ position:"absolute", bottom:0, left:0, right:0, height:120, background:"linear-gradient(0deg,#fbf6ec,transparent)" }} />
+            {/* Top gradient to seal against separator */}
+            <div style={{ position:"absolute", top:0, left:0, right:0, height:60, background:"linear-gradient(180deg,#0a0603,transparent)" }} />
+            {/* Floating info badge */}
+            <div className="video-badge">
+              <span style={{ font:"700 15px/1 'Playfair Display'", color:"#fff" }}>Sangam Hotels · Malkapur</span>
+              <span className="video-badge-sep" style={{ width:1, height:18, background:"rgba(199,154,58,.4)", flexShrink:0 }} />
+              <span className="video-badge-loc" style={{ font:"500 13px/1 'DM Sans'", color:"#c79a3a" }}>JIO BP Plaza · NH65 · Choutuppal</span>
+              <a href="https://maps.google.com/?q=Sangam+Hotels+Malkapur+Choutuppal" target="_blank" rel="noopener noreferrer"
+                style={{ background:"#c79a3a", color:"#1a1006", font:"700 12px/1 'DM Sans'", padding:"9px 18px", borderRadius:20, textDecoration:"none", flexShrink:0 }}>
+                Get Directions →
+              </a>
+            </div>
+          </div>
+
           {/* WHAT WE SERVE */}
           <div className="sec-pad" style={{ background:"#fbf6ec" }}>
             <div style={{ textAlign:"center", marginBottom:48 }}>
@@ -438,6 +493,54 @@ export default function SangamHotels() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* ── FROM OUR KITCHEN — cooking video ──────────────────── */}
+          <div style={{ background:"#1c100c", padding:"72px 20px" }}>
+            <div className="cooking-grid">
+              {/* Left: cooking video */}
+              <div style={{ position:"relative", borderRadius:22, overflow:"hidden", boxShadow:"0 32px 72px rgba(0,0,0,.6)", background:"#0e0806" }}>
+                <video autoPlay loop muted playsInline style={{ width:"100%", display:"block", objectFit:"cover" }}>
+                  <source src="/cooking.mp4" type="video/mp4" />
+                </video>
+                {/* Gold ring border overlay */}
+                <div style={{ position:"absolute", inset:0, borderRadius:22, border:"1.5px solid rgba(199,154,58,.25)", pointerEvents:"none" }} />
+                <div style={{ position:"absolute", bottom:16, left:16, display:"flex", alignItems:"center", gap:8, background:"rgba(0,0,0,.6)", backdropFilter:"blur(8px)", borderRadius:20, padding:"8px 14px" }}>
+                  <span style={{ width:7, height:7, borderRadius:"50%", background:"#e74c3c", display:"inline-block", animation:"wfpulse 1.4s infinite" }} />
+                  <span style={{ font:"600 11px/1 'DM Sans'", color:"#fff", letterSpacing:".06em" }}>LIVE FROM OUR KITCHEN</span>
+                </div>
+              </div>
+
+              {/* Right: copy */}
+              <div>
+                <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#c79a3a", marginBottom:16 }}>Made fresh, every day</div>
+                <h2 className="h-lg" style={{ margin:"0 0 20px", color:"#fff" }}>
+                  Cooked with tradition,<br />
+                  <span style={{ color:"#c79a3a", fontStyle:"italic" }}>served with pride</span>
+                </h2>
+                <p style={{ margin:"0 0 16px", font:"400 15px/1.75 'DM Sans'", color:"#cdbba4" }}>
+                  Every morning at 6 AM, our chefs begin the same ritual — fresh batter ground overnight, sambar simmered with hand-roasted spices, ghee sourced from trusted local dairies.
+                </p>
+                <p style={{ margin:"0 0 28px", font:"400 15px/1.75 'DM Sans'", color:"#9b8c78" }}>
+                  No shortcuts. No preservatives. Just the authentic taste of home, made fresh at every one of our 7 branches across Hyderabad & Telangana.
+                </p>
+                <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
+                  {[
+                    { num:"7", label:"Branches" },
+                    { num:"6 AM", label:"Starts every day" },
+                    { num:"0", label:"Preservatives" },
+                  ].map(s => (
+                    <div key={s.label}>
+                      <div style={{ font:"800 28px/1 'Playfair Display'", color:"#c79a3a" }}>{s.num}</div>
+                      <div style={{ font:"500 12px/1.4 'DM Sans'", color:"#9b8c78", marginTop:4 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={go("menu")} style={{ marginTop:28, display:"inline-flex", alignItems:"center", gap:9, background:"#c79a3a", color:"#1a1006", font:"700 14px/1 'DM Sans'", padding:"14px 28px", borderRadius:30, border:"none", cursor:"pointer" }}>
+                  See our menu →
+                </button>
+              </div>
             </div>
           </div>
 
@@ -519,7 +622,7 @@ export default function SangamHotels() {
               </div>
               {/* Second row of smaller tiles */}
               <div className="gallery-row2">
-                {[IMGS.peer1, IMGS.peer2, IMGS.malkapur1, IMGS.malkapur3, IMGS.room3, IMGS.room4].map((src,i) => (
+                {[IMGS.peer1, "/malkapur-exterior-1.jpg", IMGS.malkapur3, "/banquet-buffet.jpg", IMGS.room3, IMGS.room4].map((src,i) => (
                   <div key={i} style={{ position:"relative", paddingTop:"100%", borderRadius:14, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
                     <Img src={src} alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
                   </div>
@@ -531,10 +634,16 @@ export default function SangamHotels() {
           {/* CATERING PROMO */}
           <div style={{ padding:"0 20px 64px" }}>
             <div style={{ maxWidth:1180, margin:"0 auto", border:"1px solid #ece2d2", borderRadius:26, overflow:"hidden", boxShadow:"0 18px 40px rgba(60,40,20,.08)" }} className="grid-2">
-              <div style={{ position:"relative", minHeight:340, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden" }}>
-                <Img src={IMGS.arangam} alt="Arangam Hall" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
+              <div style={{ position:"relative", minHeight:340, background:"#1a1006", overflow:"hidden" }}>
+                {/* Buffet setup photo with hall photo beneath */}
+                <img src="/banquet-buffet.jpg" alt="Sangam Banquet Buffet"
+                  style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
+                <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.4))" }} />
+                <div style={{ position:"absolute", bottom:20, left:20, font:"600 13px/1 'DM Sans'", color:"#fff", background:"rgba(0,0,0,.5)", backdropFilter:"blur(6px)", padding:"9px 16px", borderRadius:20 }}>
+                  Grand buffet setup · Sangamam Hall (600 guests)
+                </div>
               </div>
-              <div style={{ padding:"52px 54px", background:"#fff" }}>
+              <div className="catering-inner">
                 <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".24em", textTransform:"uppercase", color:"#8a1f2b" }}>Catering &amp; events</div>
                 <h2 style={{ margin:"16px 0 16px", font:"700 36px/1.1 'Playfair Display'", color:"#2a201b" }}>Weddings, corporate &amp; house parties</h2>
                 <p style={{ margin:"0 0 10px", font:"400 15px/1.7 'DM Sans'", color:"#7a6e62" }}>Four fully air-conditioned halls — <strong>Sangamam (600)</strong>, Arangam (300), Magudam (300) &amp; Hayathnagar (300).</p>

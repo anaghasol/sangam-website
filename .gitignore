@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# large raw video originals (web-optimised versions committed instead)
+public/malkapur-showcase.mp4
+public/jiobp-logo.png
+"Sangam Hotel Peerzadiguda.mp4"
