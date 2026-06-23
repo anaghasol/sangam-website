@@ -53,6 +53,13 @@ const IMGS = {
   // ── Editorial / blog ──────────────────────────────────────────
   hotelHero:    `${BASE}/2025/08/Sangam-Hotel-Hyderabad-–-Redefining-Hospitality-Taste-and-Celebrations-1078x595.jpg`,
   peerzExt:     `${BASE}/2025/09/Sangam-Hotel-By-Sameeksha-Hospitality-1078x595.jpg`,
+  peerzThali:   "/peerzadiguda-int-2.jpg",
+  haythThali2:  "/hayathnagar-live-2.jpg",
+  haythThali3:  "/hayathnagar-live-3.jpg",
+  koyya:        "/koyyalagudem.webp",
+  bakesMans:    "/bakes-mansoorabad.webp",
+  tiffinsMans:  "/tiffins-mansoorabad.webp",
+  bakesHayt:    "/bakes-hayathnagar.webp",
   newBranch:    `${BASE}/2025/07/WhatsApp-Image-2025-07-07-at-15.12.37_d297b49e.jpg`,
 };
 
@@ -72,7 +79,7 @@ const BRANCHES = [
     phone2: "+91 90638 44022",
     hours: "24 Hours",
     rating: "4.5",
-    img: IMGS.peerzExt,
+    img: IMGS.peerzThali,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Peerzadiguda+Hyderabad",
     swiggy: "",
     zomato: "https://www.zomato.com/hyderabad/sangam-hotel-l-b-nagar",
@@ -91,7 +98,7 @@ const BRANCHES = [
     phone: "+91 73838 38166",
     hours: "6 AM – 11 PM",
     rating: "4.6",
-    img: IMGS.hayt1,
+    img: IMGS.haythThali3,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Hayathnagar+Hyderabad",
     swiggy: "https://www.swiggy.com/city/hyderabad/sangam-hotel-krupa-colony-vanasthalipuram-rest571085",
     zomato: "https://www.zomato.com/hyderabad/sangam-hotel-vanasthalipuram",
@@ -129,7 +136,7 @@ const BRANCHES = [
     phone: "+91 90638 44021",
     hours: "7 AM – 10:30 PM",
     rating: "4.5",
-    img: IMGS.bakery,
+    img: IMGS.bakesHayt,
     mapsLink: "https://share.google/hZbW0oHkG2KJbKdcU",
     swiggy: "",
     zomato: "https://www.zomato.com/hyderabad/sangam-bakes-cakes-vanasthalipuram/order",
@@ -148,7 +155,7 @@ const BRANCHES = [
     phone: "+91 90638 44021",
     hours: "7 AM – 10:30 PM",
     rating: "4.5",
-    img: IMGS.bakery,
+    img: IMGS.bakesMans,
     mapsLink: "https://share.google/LvqnUASmK13LmXwYM",
     swiggy: "",
     zomato: "https://www.zomato.com/hyderabad/sangam-bakes-cakes-l-b-nagar/order",
@@ -167,7 +174,7 @@ const BRANCHES = [
     phone: "+91 73838 38166",
     hours: "6:30 AM – 3 PM",
     rating: "4.4",
-    img: IMGS.tiffins,
+    img: IMGS.tiffinsMans,
     mapsLink: "https://share.google/Cm4dgz1StJ9kDDozJ",
     swiggy: "",
     zomato: "",
@@ -186,7 +193,7 @@ const BRANCHES = [
     phone: "+91 90638 44021",
     hours: "6 AM – 3 PM",
     rating: "4.4",
-    img: IMGS.tiffins,
+    img: IMGS.koyya,
     mapsLink: "https://share.google/CvuJkWSxmb7AWI7U9",
     swiggy: "",
     zomato: "",
@@ -887,13 +894,16 @@ export default function SangamHotels() {
           <div style={{ maxWidth:1180, margin:"0 auto", padding:"28px 20px 64px" }} className="grid-branches">
             {filteredBranches.map(b => (
               <div key={b.id} style={{ border:"1px solid #ece2d2", borderRadius:22, overflow:"hidden", background:"#fff", boxShadow:"0 12px 30px rgba(60,40,20,.06)" }}>
-                <div style={{ position:"relative", height:180, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden" }}>
-                  <Img src={b.img} alt={b.name} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
-                  <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg,rgba(0,0,0,.0),rgba(0,0,0,.35))" }} />
-                  <span style={{ position:"absolute", top:14, right:14, font:`600 9px/1 'DM Sans'`, color:b.badgeColor, background:b.badgeBg, border:`1px solid ${b.badgeBorder}`, borderRadius:6, padding:"5px 9px", letterSpacing:".06em" }}>{b.badge}</span>
-                </div>
+                <a href={b.mapsLink} target="_blank" rel="noopener noreferrer" style={{ display:"block", textDecoration:"none" }}>
+                  <div style={{ position:"relative", height:220, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden" }}>
+                    <Img src={b.img} alt={b.name} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", transition:"transform .4s ease" }} />
+                    <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg,rgba(0,0,0,.0),rgba(0,0,0,.35))" }} />
+                    <span style={{ position:"absolute", top:14, right:14, font:`600 9px/1 'DM Sans'`, color:b.badgeColor, background:b.badgeBg, border:`1px solid ${b.badgeBorder}`, borderRadius:6, padding:"5px 9px", letterSpacing:".06em" }}>{b.badge}</span>
+                    <span style={{ position:"absolute", bottom:12, right:14, font:"600 11px/1 'DM Sans'", color:"#fff", background:"rgba(0,0,0,.5)", borderRadius:10, padding:"5px 10px", backdropFilter:"blur(4px)" }}>View on Maps ↗</span>
+                  </div>
+                </a>
                 <div style={{ padding:"22px 24px" }}>
-                  <div style={{ font:"700 20px/1.2 'Playfair Display'", color:"#2a201b", marginBottom:4 }}>{b.name}</div>
+                  <a href={b.mapsLink} target="_blank" rel="noopener noreferrer" style={{ font:"700 20px/1.2 'Playfair Display'", color:"#2a201b", marginBottom:4, textDecoration:"none", display:"block" }}>{b.name}</a>
                   <div style={{ font:"600 12px/1 'DM Sans'", color:"#8a6a16", marginBottom:10 }}>{b.tagline}</div>
                   <p style={{ margin:"0 0 8px", font:"400 13px/1.6 'DM Sans'", color:"#7a6e62" }}>📍 {b.address}</p>
                   <div style={{ display:"flex", gap:16, font:"500 13px/1.5 'DM Sans'", color:"#6f655b", marginBottom:16 }}>
