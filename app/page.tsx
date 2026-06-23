@@ -260,6 +260,7 @@ export default function SangamHotels() {
   const [chatOpen, setChatOpen] = useState(false);
   const [muted, setMuted] = useState(true);
   const [branchFilter, setBranchFilter] = useState("All");
+  const [menuCat, setMenuCat] = useState("Tiffins");
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const go = (s: Screen) => () => setScreen(s);
@@ -599,43 +600,84 @@ export default function SangamHotels() {
 
           <div style={{ maxWidth:1180, margin:"0 auto", display:"grid", gridTemplateColumns:"200px 1fr 320px", background:"#fbf6ec" }}>
             <div style={{ padding:"24px 14px", borderRight:"1px solid #ece2d2", background:"#fff" }}>
-              {["Tiffins","Meals & Curries","Biryani","Bakery","Snacks & Chats","Beverages"].map((cat,i) => (
-                <div key={cat} style={{ background:i===0?"#8a1f2b":"transparent", color:i===0?"#fff":"#4a3f36", borderRadius:12, padding:"13px 16px", font:"600 14px/1 'DM Sans'", marginBottom:6, cursor:"pointer" }}>{cat}</div>
+              {["Tiffins","Meals & Curries","Biryani","Bakery","Snacks & Chats","Beverages"].map((cat) => (
+                <div key={cat} onClick={() => setMenuCat(cat)}
+                  style={{ background:menuCat===cat?"#8a1f2b":"transparent", color:menuCat===cat?"#fff":"#4a3f36", borderRadius:12, padding:"13px 16px", font:"600 14px/1 'DM Sans'", marginBottom:6, cursor:"pointer" }}>{cat}</div>
               ))}
             </div>
 
-            <div style={{ padding:"28px 30px" }}>
-              <h3 style={{ margin:"0 0 6px", font:"700 26px/1 'Playfair Display'", color:"#2a201b" }}>Tiffins</h3>
-              <p style={{ margin:"0 0 20px", font:"500 13px/1 'DM Sans'", color:"#9b8c78" }}>Served 6 AM – 11 AM daily at all branches</p>
-              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-                {[
-                  { img:IMGS.tiffins,    name:"Idli Vada Platter",  desc:"2 soft idlis + 2 crispy vadas with sambar & 3 chutneys", price:"₹80",  veg:true, bestseller:true },
-                  { img:IMGS.tiffins,    name:"Ghee Masala Dosa",   desc:"Potato masala, roasted crisp in pure ghee, served with sambar", price:"₹110", veg:true },
-                  { img:IMGS.tiffins,    name:"Medu Vada (2 pc)",   desc:"Crispy lentil fritters with fresh sambar & coconut chutney", price:"₹60",  veg:true },
-                  { img:IMGS.restaurant, name:"Veg Meals",           desc:"Rice, rasam, sambar, 3 curries, pickle & papad",  price:"₹149", veg:true },
-                  { img:IMGS.biryaniReal,name:"Mutton Biryani",      desc:"Slow-cooked dum biryani with tender mutton & whole spices", price:"₹280", veg:false },
+            {(() => {
+              const MENU_DATA: Record<string,{sub:string; items:{img:string;name:string;desc:string;price:string;veg:boolean;bestseller?:boolean}[]}> = {
+                "Tiffins":        { sub:"Served 6 AM – 11 AM daily at all branches", items:[
+                  { img:IMGS.tiffins,    name:"Idli Vada Platter",   desc:"2 soft idlis + 2 crispy vadas with sambar & 3 chutneys", price:"₹80",  veg:true, bestseller:true },
+                  { img:IMGS.tiffins,    name:"Ghee Masala Dosa",    desc:"Potato masala, roasted crisp in pure ghee, served with sambar", price:"₹110", veg:true },
+                  { img:IMGS.tiffins,    name:"Plain Dosa",           desc:"Crispy rice crepe with coconut chutney & sambar", price:"₹70", veg:true },
+                  { img:IMGS.tiffins,    name:"Medu Vada (2 pc)",    desc:"Crispy lentil fritters with sambar & coconut chutney", price:"₹60",  veg:true },
                   { img:IMGS.tiffins,    name:"Puri Bhaji (3 pc)",   desc:"Fluffy puris with spiced potato bhaji & chutney", price:"₹80",  veg:true },
-                ].map(item => (
-                  <div key={item.name} style={{ display:"flex", gap:16, alignItems:"center", background:"#fff", border:"1px solid #ece2d2", borderRadius:16, padding:16, boxShadow:"0 6px 18px rgba(60,40,20,.05)" }}>
-                    <div style={{ width:90, height:76, borderRadius:12, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden", position:"relative", flexShrink:0 }}>
-                      <Img src={item.img} alt={item.name} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
-                    </div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-                        <span style={{ width:13, height:13, border:`1.5px solid ${item.veg?"#1a8a3a":"#b3261e"}`, borderRadius:3, display:"inline-flex", alignItems:"center", justifyContent:"center" }}>
-                          <span style={{ width:5, height:5, borderRadius:"50%", background:item.veg?"#1a8a3a":"#b3261e" }} />
-                        </span>
-                        <span style={{ font:"600 16px/1.2 'DM Sans'", color:"#2a201b" }}>{item.name}</span>
-                        {"bestseller" in item && item.bestseller && <span style={{ font:"600 9px/1 'DM Sans'", color:"#b88a2e", background:"#f7eecf", border:"1px solid #e8d6a4", borderRadius:5, padding:"3px 7px" }}>BESTSELLER</span>}
+                  { img:IMGS.tiffins,    name:"Upma",                 desc:"Semolina upma with vegetables & lemon", price:"₹50",  veg:true },
+                ]},
+                "Meals & Curries":{ sub:"Available 11 AM – 4 PM · Served with rice or roti", items:[
+                  { img:IMGS.restaurant, name:"Veg Meals",            desc:"Rice, rasam, sambar, 3 curries, pickle & papad", price:"₹149", veg:true, bestseller:true },
+                  { img:IMGS.restaurant, name:"Non-Veg Meals",        desc:"Rice, curry, mutton/chicken side, papad & pickle", price:"₹199", veg:false },
+                  { img:IMGS.restaurant, name:"Dal Fry + Roti (3)",   desc:"Lentil curry with 3 wheat rotis & onion salad", price:"₹120", veg:true },
+                  { img:IMGS.restaurant, name:"Paneer Butter Masala", desc:"Cottage cheese in rich tomato-cream gravy", price:"₹180", veg:true },
+                  { img:IMGS.restaurant, name:"Chicken Curry",        desc:"Tender chicken in spiced Andhra-style gravy", price:"₹200", veg:false },
+                ]},
+                "Biryani":        { sub:"Slow-cooked dum biryani · Available from 12 PM", items:[
+                  { img:IMGS.biryaniReal,name:"Mutton Biryani",       desc:"Slow-cooked dum biryani with tender mutton & whole spices", price:"₹280", veg:false, bestseller:true },
+                  { img:IMGS.biryaniReal,name:"Chicken Biryani",      desc:"Juicy chicken pieces in fragrant basmati rice", price:"₹220", veg:false },
+                  { img:IMGS.biryaniReal,name:"Veg Biryani",          desc:"Seasonal vegetables, saffron & whole spices dum style", price:"₹180", veg:true },
+                  { img:IMGS.biryaniReal,name:"Egg Biryani",          desc:"Masala eggs layered with aromatic basmati rice", price:"₹170", veg:false },
+                ]},
+                "Bakery":         { sub:"Baked fresh daily · Available at Bakes outlets", items:[
+                  { img:IMGS.bakery,     name:"Black Forest Cake (slice)", desc:"Fresh cream, cherries, dark chocolate sponge", price:"₹90",  veg:true, bestseller:true },
+                  { img:IMGS.bakery,     name:"Butter Croissant",      desc:"Flaky, buttery croissant baked fresh every morning", price:"₹60",  veg:true },
+                  { img:IMGS.bakery,     name:"Chocolate Brownie",     desc:"Dense, fudgy chocolate brownie with walnuts", price:"₹70",  veg:true },
+                  { img:IMGS.bakery,     name:"Custom Celebration Cake", desc:"1 kg custom decorated cake — order 1 day ahead", price:"₹799", veg:true },
+                  { img:IMGS.bakery,     name:"Cupcake Box (6 pc)",    desc:"Assorted flavours — vanilla, chocolate, red velvet", price:"₹240", veg:true },
+                ]},
+                "Snacks & Chats": { sub:"Evening snacks · 4 PM – 9 PM", items:[
+                  { img:IMGS.tiffins,    name:"Samosa (2 pc)",         desc:"Crispy potato-filled pastry with tamarind chutney", price:"₹40",  veg:true, bestseller:true },
+                  { img:IMGS.tiffins,    name:"Pav Bhaji",             desc:"Spiced vegetable mash with butter pav", price:"₹110", veg:true },
+                  { img:IMGS.tiffins,    name:"Mirchi Bajji (4 pc)",   desc:"Green chilli fritters with coconut chutney", price:"₹60",  veg:true },
+                  { img:IMGS.tiffins,    name:"Bread Pakora (4 pc)",   desc:"Spiced potato-stuffed bread fritters", price:"₹70",  veg:true },
+                ]},
+                "Beverages":      { sub:"Fresh juices, chai & cold drinks", items:[
+                  { img:IMGS.tiffins,    name:"Masala Chai",           desc:"Ginger-cardamom tea with full-cream milk", price:"₹30",  veg:true, bestseller:true },
+                  { img:IMGS.tiffins,    name:"Filter Coffee",         desc:"South Indian decoction with fresh milk & froth", price:"₹35",  veg:true },
+                  { img:IMGS.tiffins,    name:"Fresh Lime Soda",       desc:"Sweet, salted or masala — your choice", price:"₹50",  veg:true },
+                  { img:IMGS.tiffins,    name:"Mango Lassi",           desc:"Thick Alphonso mango blended with fresh curd", price:"₹80",  veg:true },
+                ]},
+              };
+              const cat = MENU_DATA[menuCat] ?? MENU_DATA["Tiffins"];
+              return (
+                <div style={{ padding:"28px 30px" }}>
+                  <h3 style={{ margin:"0 0 6px", font:"700 26px/1 'Playfair Display'", color:"#2a201b" }}>{menuCat}</h3>
+                  <p style={{ margin:"0 0 20px", font:"500 13px/1 'DM Sans'", color:"#9b8c78" }}>{cat.sub}</p>
+                  <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                    {cat.items.map(item => (
+                      <div key={item.name} style={{ display:"flex", gap:16, alignItems:"center", background:"#fff", border:"1px solid #ece2d2", borderRadius:16, padding:16, boxShadow:"0 6px 18px rgba(60,40,20,.05)" }}>
+                        <div style={{ width:90, height:76, borderRadius:12, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden", position:"relative", flexShrink:0 }}>
+                          <Img src={item.img} alt={item.name} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
+                        </div>
+                        <div style={{ flex:1 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                            <span style={{ width:13, height:13, border:`1.5px solid ${item.veg?"#1a8a3a":"#b3261e"}`, borderRadius:3, display:"inline-flex", alignItems:"center", justifyContent:"center" }}>
+                              <span style={{ width:5, height:5, borderRadius:"50%", background:item.veg?"#1a8a3a":"#b3261e" }} />
+                            </span>
+                            <span style={{ font:"600 16px/1.2 'DM Sans'", color:"#2a201b" }}>{item.name}</span>
+                            {item.bestseller && <span style={{ font:"600 9px/1 'DM Sans'", color:"#b88a2e", background:"#f7eecf", border:"1px solid #e8d6a4", borderRadius:5, padding:"3px 7px" }}>BESTSELLER</span>}
+                          </div>
+                          <p style={{ margin:"5px 0 8px", font:"400 13px/1.5 'DM Sans'", color:"#9b8c78" }}>{item.desc}</p>
+                          <span style={{ font:"700 16px/1 'DM Sans'", color:"#2a201b" }}>{item.price}</span>
+                        </div>
+                        <button onClick={() => setChatOpen(true)} style={{ background:"#fff", border:"1.5px solid #8a1f2b", color:"#8a1f2b", borderRadius:22, padding:"10px 18px", font:"600 13px/1 'DM Sans'", cursor:"pointer", flexShrink:0 }}>Add +</button>
                       </div>
-                      <p style={{ margin:"5px 0 8px", font:"400 13px/1.5 'DM Sans'", color:"#9b8c78" }}>{item.desc}</p>
-                      <span style={{ font:"700 16px/1 'DM Sans'", color:"#2a201b" }}>{item.price}</span>
-                    </div>
-                    <button onClick={() => setChatOpen(true)} style={{ background:"#fff", border:"1.5px solid #8a1f2b", color:"#8a1f2b", borderRadius:22, padding:"10px 18px", font:"600 13px/1 'DM Sans'", cursor:"pointer", flexShrink:0 }}>Add +</button>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              );
+            })()}
 
             <div style={{ padding:"24px 22px" }}>
               <div style={{ position:"sticky", top:108, background:"#fff", border:"1px solid #ece2d2", borderRadius:18, padding:22, boxShadow:"0 12px 30px rgba(60,40,20,.07)" }}>
@@ -1065,8 +1107,15 @@ export default function SangamHotels() {
           </div>
           <div>
             <div style={{ font:"600 11px/1 'DM Sans'", letterSpacing:".1em", textTransform:"uppercase", color:"#fff", marginBottom:16 }}>Branches</div>
-            <div style={{ display:"flex", flexDirection:"column", gap:10, font:"500 13px/1.4 'DM Sans'", color:"#a99c8c" }}>
-              {BRANCHES.map(b => <span key={b.id}>{b.name}</span>)}
+            <div style={{ display:"flex", flexDirection:"column", gap:10, font:"500 13px/1.4 'DM Sans'" }}>
+              {BRANCHES.map(b => (
+                <a key={b.id} href={b.mapsLink} target="_blank" rel="noopener noreferrer"
+                  style={{ color:"#a99c8c", textDecoration:"none", display:"flex", alignItems:"center", gap:5 }}
+                  onMouseEnter={e => (e.currentTarget.style.color="#c79a3a")}
+                  onMouseLeave={e => (e.currentTarget.style.color="#a99c8c")}>
+                  <span style={{ fontSize:9, color:"#c79a3a" }}>📍</span>{b.name}
+                </a>
+              ))}
             </div>
           </div>
           <div>
