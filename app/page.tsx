@@ -261,6 +261,7 @@ export default function SangamHotels() {
   const [muted, setMuted] = useState(true);
   const [branchFilter, setBranchFilter] = useState("All");
   const [menuCat, setMenuCat] = useState("Tiffins");
+  const [navOpen, setNavOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const go = (s: Screen) => () => setScreen(s);
@@ -280,34 +281,49 @@ export default function SangamHotels() {
     <div style={{ minHeight: "100vh", background: "#fbf6ec", fontFamily: "'DM Sans', sans-serif" }}>
 
       {/* ── UTILITY STRIP ─────────────────────────────────────────── */}
-      <div style={{ display:"flex", alignItems:"center", gap:16, padding:"0 40px", height:38, background:"#241510", color:"#e8d8c2", font:"500 12.5px/1 'DM Sans'" }}>
-        <span>📍 7 locations across Hyderabad &amp; Telangana</span>
+      <div className="util-strip" style={{ background:"#241510", color:"#e8d8c2", font:"500 12.5px/1 'DM Sans'" }}>
+        <span>📍 7 locations · Hyderabad</span>
         <span style={{ opacity:.4 }}>•</span>
-        <span>🕒 Open 6:00 AM – 11:00 PM</span>
-        <div style={{ flex:1 }} />
-        <a href="https://wa.me/qr/2AWL7MVBOJPEH1" target="_blank" rel="noopener noreferrer" style={{ color:"#9fd9a0", textDecoration:"none", display:"inline-flex", alignItems:"center", gap:6 }}>💬 WhatsApp</a>
-        <span style={{ opacity:.4 }}>•</span>
-        <a href="tel:+919063844021" style={{ color:"#e8d8c2", textDecoration:"none" }}>📞 +91 90638 44021</a>
+        <span>🕒 6:00 AM – 11:00 PM</span>
+        <div className="util-strip-right">
+          <a href="https://wa.me/qr/2AWL7MVBOJPEH1" target="_blank" rel="noopener noreferrer" style={{ color:"#9fd9a0", textDecoration:"none", display:"inline-flex", alignItems:"center", gap:6 }}>💬 WhatsApp</a>
+          <span style={{ opacity:.4 }}>•</span>
+          <a href="tel:+919063844021" style={{ color:"#e8d8c2", textDecoration:"none" }}>📞 +91 90638 44021</a>
+        </div>
       </div>
 
       {/* ── HEADER ────────────────────────────────────────────────── */}
-      <div style={{ position:"sticky", top:0, zIndex:50, display:"flex", alignItems:"center", gap:26, padding:"14px 40px", background:"rgba(251,246,236,.96)", backdropFilter:"blur(10px)", borderBottom:"1px solid #ece2d2" }}>
-        <div onClick={go("home")} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
-          <Img src={IMGS.logo} alt="Sangam Hotels" style={{ height:46, width:"auto", display:"block" }} />
-          <div style={{ lineHeight:1 }}>
-            <div style={{ font:"700 21px/1 'Playfair Display'", color:"#8a1f2b" }}>Sangam Hotels</div>
-            <div style={{ font:"600 8.5px/1.4 'DM Sans'", letterSpacing:".26em", color:"#b88a2e", marginTop:4, textTransform:"uppercase" }}>Hyderabad · Since 2022</div>
+      <div style={{ position:"sticky", top:0, zIndex:50, background:"rgba(251,246,236,.96)", backdropFilter:"blur(10px)", borderBottom:"1px solid #ece2d2" }}>
+        <div className="nav-header">
+          <div onClick={() => { go("home")(); setNavOpen(false); }} style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
+            <Img src={IMGS.logo} alt="Sangam Hotels" style={{ height:46, width:"auto", display:"block" }} />
+            <div style={{ lineHeight:1 }}>
+              <div style={{ font:"700 21px/1 'Playfair Display'", color:"#8a1f2b" }}>Sangam Hotels</div>
+              <div style={{ font:"600 8.5px/1.4 'DM Sans'", letterSpacing:".26em", color:"#b88a2e", marginTop:4, textTransform:"uppercase" }}>Hyderabad · Since 2022</div>
+            </div>
           </div>
+          <div style={{ flex:1 }} />
+          <nav className="nav-links">
+            {(["home","menu","branches","catering","rooms","about","contact"] as Screen[]).map(s => (
+              <a key={s} onClick={go(s)} style={nav(s)}>{s.charAt(0).toUpperCase()+s.slice(1)}</a>
+            ))}
+          </nav>
+          <button onClick={go("menu")} className="nav-order-btn" style={{ background:"#8a1f2b", color:"#fff", font:"600 14px/1 'DM Sans'", padding:"13px 22px", borderRadius:30, border:"none", cursor:"pointer", boxShadow:"0 8px 20px rgba(138,31,43,.22)" }}>
+            Order Online
+          </button>
+          <button className="hamburger" onClick={() => setNavOpen(o => !o)} aria-label="Menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              {navOpen ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></> : <><line x1="3" y1="7" x2="21" y2="7"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="17" x2="21" y2="17"/></>}
+            </svg>
+          </button>
         </div>
-        <div style={{ flex:1 }} />
-        <nav style={{ display:"flex", alignItems:"center", gap:22 }}>
+        {/* Mobile dropdown */}
+        <div className={`mobile-menu${navOpen ? " open" : ""}`}>
           {(["home","menu","branches","catering","rooms","about","contact"] as Screen[]).map(s => (
-            <a key={s} onClick={go(s)} style={nav(s)}>{s.charAt(0).toUpperCase()+s.slice(1)}</a>
+            <a key={s} onClick={() => { go(s)(); setNavOpen(false); }}>{s.charAt(0).toUpperCase()+s.slice(1)}</a>
           ))}
-        </nav>
-        <button onClick={go("menu")} style={{ display:"inline-flex", alignItems:"center", gap:8, background:"#8a1f2b", color:"#fff", font:"600 14px/1 'DM Sans'", padding:"13px 22px", borderRadius:30, border:"none", cursor:"pointer", boxShadow:"0 8px 20px rgba(138,31,43,.22)" }}>
-          Order Online
-        </button>
+          <a onClick={() => { go("menu")(); setNavOpen(false); }} style={{ background:"#8a1f2b", color:"#fff !important" as "inherit", margin:"8px 16px", borderRadius:10, textAlign:"center", border:"none" }}>🛒 Order Online</a>
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════
@@ -316,42 +332,33 @@ export default function SangamHotels() {
       {screen === "home" && (
         <div>
           {/* HERO VIDEO */}
-          <div style={{ position:"relative", height:600, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden" }}>
-            <video
-              ref={videoRef}
-              autoPlay loop muted={muted} playsInline
+          <div className="hero-wrap">
+            <video ref={videoRef} autoPlay loop muted={muted} playsInline
               style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }}
-              poster={IMGS.heroFallback}
-            >
+              poster={IMGS.heroFallback}>
               <source src="/hero.mp4" type="video/mp4" />
             </video>
             <div style={{ position:"absolute", inset:0, background:"linear-gradient(100deg,rgba(20,10,8,.9) 0%,rgba(20,10,8,.6) 46%,rgba(20,10,8,.15) 100%)" }} />
-            <div style={{ position:"relative", height:"100%", display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 60px", maxWidth:800 }}>
+            <div className="hero-content">
               <div style={{ font:"600 13px/1 'DM Sans'", letterSpacing:".26em", textTransform:"uppercase", color:"#e7cd8f", marginBottom:18 }}>Seven kitchens · one taste of home</div>
-              <h1 style={{ margin:"0 0 20px", font:"800 62px/1.04 'Playfair Display'", color:"#fff", maxWidth:680 }}>
-                Authentic South Indian, freshly made across Hyderabad
-              </h1>
-              <p style={{ margin:"0 0 32px", font:"400 18px/1.65 'DM Sans'", color:"#f0e6d8", maxWidth:540 }}>
-                Tiffins, full meals, bakery &amp; banquets — order online, book catering, or stay with us.
-              </p>
-              <div style={{ display:"flex", gap:14, flexWrap:"wrap" }}>
-                <button onClick={go("menu")} style={{ display:"inline-flex", alignItems:"center", gap:9, background:"#c79a3a", color:"#2a1c06", font:"700 16px/1 'DM Sans'", padding:"18px 32px", borderRadius:36, border:"none", cursor:"pointer", boxShadow:"0 12px 28px rgba(199,154,58,.4)" }}>
+              <h1 className="hero-title">Authentic South Indian, freshly made across Hyderabad</h1>
+              <p className="hero-subtitle">Tiffins, full meals, bakery &amp; banquets — order online, book catering, or stay with us.</p>
+              <div className="hero-ctas">
+                <button onClick={go("menu")} style={{ display:"inline-flex", alignItems:"center", gap:9, background:"#c79a3a", color:"#2a1c06", font:"700 16px/1 'DM Sans'", padding:"16px 28px", borderRadius:36, border:"none", cursor:"pointer", boxShadow:"0 12px 28px rgba(199,154,58,.4)" }}>
                   🛒 Order Online
                 </button>
-                <button onClick={go("catering")} style={{ display:"inline-flex", alignItems:"center", gap:9, background:"rgba(255,255,255,.12)", color:"#fff", font:"600 16px/1 'DM Sans'", padding:"18px 30px", borderRadius:36, border:"1.5px solid rgba(255,255,255,.5)", cursor:"pointer" }}>
+                <button onClick={go("catering")} style={{ display:"inline-flex", alignItems:"center", gap:9, background:"rgba(255,255,255,.12)", color:"#fff", font:"600 16px/1 'DM Sans'", padding:"16px 26px", borderRadius:36, border:"1.5px solid rgba(255,255,255,.5)", cursor:"pointer" }}>
                   Book Catering
                 </button>
               </div>
-              <div style={{ marginTop:30, display:"flex", alignItems:"center", gap:20, font:"500 14px/1 'DM Sans'", color:"#ede2d2" }}>
+              <div className="hero-meta">
                 <span style={{ color:"#f0c860" }}>★★★★★ 4.6</span>
                 <span style={{ opacity:.5 }}>|</span><span>12,000+ diners served</span>
-                <span style={{ opacity:.5 }}>|</span><span>Veg &amp; Non-veg</span>
                 <span style={{ opacity:.5 }}>|</span><span>Since 2022</span>
               </div>
             </div>
-            {/* Sound toggle */}
             <button onClick={() => { setMuted(m => !m); if(videoRef.current) videoRef.current.muted = !muted; }}
-              style={{ position:"absolute", bottom:24, right:28, background:"rgba(36,21,16,.75)", border:"1.5px solid rgba(255,255,255,.3)", color:"#fff", borderRadius:30, padding:"10px 18px", font:"600 13px/1 'DM Sans'", cursor:"pointer", backdropFilter:"blur(6px)", zIndex:10 }}>
+              style={{ position:"absolute", bottom:20, right:20, background:"rgba(36,21,16,.75)", border:"1.5px solid rgba(255,255,255,.3)", color:"#fff", borderRadius:30, padding:"9px 16px", font:"600 12px/1 'DM Sans'", cursor:"pointer", backdropFilter:"blur(6px)", zIndex:10 }}>
               {muted ? "🔇 Sound off" : "🔊 Sound on"}
             </button>
           </div>
@@ -367,12 +374,12 @@ export default function SangamHotels() {
           </div>
 
           {/* WHAT WE SERVE */}
-          <div style={{ padding:"80px 40px 60px", background:"#fbf6ec" }}>
+          <div className="sec-pad" style={{ background:"#fbf6ec" }}>
             <div style={{ textAlign:"center", marginBottom:48 }}>
               <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#8a1f2b" }}>What we serve</div>
               <h2 style={{ margin:"14px 0 0", font:"700 46px/1.06 'Playfair Display'", color:"#2a201b" }}>From morning tiffins to grand banquets</h2>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:24, maxWidth:1180, margin:"0 auto" }}>
+            <div className="grid-4">
               {[
                 { img:IMGS.tiffins,    title:"South Indian Tiffins",    desc:"Idli, dosa, vada & upma — fresh from 6 AM every day at all our branches.", link:"Order tiffins →",  target:"menu" as Screen },
                 { img:IMGS.restaurant, title:"Restaurant & Meals",       desc:"North & South Indian meals, Hyderabadi biryani & rich curries.",             link:"See the menu →", target:"menu" as Screen },
@@ -396,7 +403,7 @@ export default function SangamHotels() {
           </div>
 
           {/* SIGNATURE DISHES */}
-          <div style={{ padding:"60px 40px 60px", background:"#fff" }}>
+          <div style={{ padding:"60px 20px", background:"#fff" }}>
             <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", maxWidth:1180, margin:"0 auto 36px" }}>
               <div>
                 <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#8a1f2b" }}>Most loved</div>
@@ -404,7 +411,7 @@ export default function SangamHotels() {
               </div>
               <a onClick={go("menu")} style={{ font:"600 14px/1 'DM Sans'", color:"#8a1f2b", cursor:"pointer" }}>Full menu →</a>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:24, maxWidth:1180, margin:"0 auto" }}>
+            <div className="grid-4">
               {[
                 { img:IMGS.tiffins,    label:"South Indian Tiffins", desc:"Idli, vada, dosa with fresh sambar & chutneys", veg:true,  price:"₹70",  bestseller:true },
                 { img:IMGS.biryaniReal,label:"Hyderabadi Biryani",  desc:"Slow-cooked dum biryani, fragrant whole spices", veg:false, price:"₹240" },
@@ -435,9 +442,9 @@ export default function SangamHotels() {
           </div>
 
           {/* BRANCH FINDER */}
-          <div style={{ padding:"64px 40px" }}>
-            <div style={{ maxWidth:1180, margin:"0 auto", background:"#241510", borderRadius:28, overflow:"hidden", display:"grid", gridTemplateColumns:"1.1fr .9fr" }}>
-              <div style={{ padding:"56px 56px", color:"#f3ece2" }}>
+          <div style={{ padding:"64px 20px" }}>
+            <div style={{ maxWidth:1180, margin:"0 auto", background:"#241510", borderRadius:28, overflow:"hidden", display:"grid", gridTemplateColumns:"1.1fr .9fr" }} className="grid-2">
+              <div style={{ padding:"40px 32px", color:"#f3ece2" }}>
                 <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".24em", textTransform:"uppercase", color:"#e7cd8f", marginBottom:16 }}>Find your nearest Sangam</div>
                 <h2 style={{ margin:"0 0 20px", font:"700 40px/1.07 'Playfair Display'" }}>Always one near you</h2>
                 <div style={{ display:"flex", gap:11, marginBottom:26 }}>
@@ -460,8 +467,8 @@ export default function SangamHotels() {
           </div>
 
           {/* CATEGORY STRIP — mirrors current site's 5-tile bar */}
-          <div style={{ padding:"0 0 0" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)" }}>
+          <div>
+            <div className="cat-strip">
               {[
                 { img:IMGS.bakery,     label:"Bakery" },
                 { img:IMGS.restaurant, label:"Restaurant" },
@@ -482,7 +489,7 @@ export default function SangamHotels() {
           </div>
 
           {/* GALLERY GRID */}
-          <div style={{ padding:"72px 40px 64px" }}>
+          <div className="sec-pad">
             <div style={{ maxWidth:1180, margin:"0 auto" }}>
               <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:28 }}>
                 <div>
@@ -492,9 +499,9 @@ export default function SangamHotels() {
                 <a onClick={go("branches")} style={{ font:"600 14px/1 'DM Sans'", color:"#8a1f2b", cursor:"pointer" }}>All branches →</a>
               </div>
               {/* Masonry-style 3-column grid */}
-              <div style={{ display:"grid", gridTemplateColumns:"1.3fr 1fr 1fr", gridTemplateRows:"220px 220px", gap:14 }}>
+              <div className="gallery-main" style={{ gap:14 }}>
                 {/* Big left tile spans 2 rows */}
-                <div style={{ gridRow:"1 / 3", position:"relative", borderRadius:18, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
+                <div className="gallery-big" style={{ position:"relative", borderRadius:18, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
                   <Img src={IMGS.magudamWide} alt="Magudam Hall" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
                   <div style={{ position:"absolute", bottom:18, left:18, font:"600 14px/1 'DM Sans'", color:"#fff", background:"rgba(0,0,0,.5)", backdropFilter:"blur(4px)", padding:"8px 14px", borderRadius:20 }}>Magudam · Hayathnagar</div>
                 </div>
@@ -511,7 +518,7 @@ export default function SangamHotels() {
                 ))}
               </div>
               {/* Second row of smaller tiles */}
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:14, marginTop:14 }}>
+              <div className="gallery-row2">
                 {[IMGS.peer1, IMGS.peer2, IMGS.malkapur1, IMGS.malkapur3, IMGS.room3, IMGS.room4].map((src,i) => (
                   <div key={i} style={{ position:"relative", paddingTop:"100%", borderRadius:14, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
                     <Img src={src} alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
@@ -522,8 +529,8 @@ export default function SangamHotels() {
           </div>
 
           {/* CATERING PROMO */}
-          <div style={{ padding:"0 40px 64px" }}>
-            <div style={{ maxWidth:1180, margin:"0 auto", display:"grid", gridTemplateColumns:"1fr 1fr", border:"1px solid #ece2d2", borderRadius:26, overflow:"hidden", boxShadow:"0 18px 40px rgba(60,40,20,.08)" }}>
+          <div style={{ padding:"0 20px 64px" }}>
+            <div style={{ maxWidth:1180, margin:"0 auto", border:"1px solid #ece2d2", borderRadius:26, overflow:"hidden", boxShadow:"0 18px 40px rgba(60,40,20,.08)" }} className="grid-2">
               <div style={{ position:"relative", minHeight:340, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden" }}>
                 <Img src={IMGS.arangam} alt="Arangam Hall" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
               </div>
@@ -598,8 +605,8 @@ export default function SangamHotels() {
             </div>
           </div>
 
-          <div style={{ maxWidth:1180, margin:"0 auto", display:"grid", gridTemplateColumns:"200px 1fr 320px", background:"#fbf6ec" }}>
-            <div style={{ padding:"24px 14px", borderRight:"1px solid #ece2d2", background:"#fff" }}>
+          <div className="menu-layout" style={{ maxWidth:1180, margin:"0 auto" }}>
+            <div className="menu-sidebar">
               {["Tiffins","Meals & Curries","Biryani","Bakery","Snacks & Chats","Beverages"].map((cat) => (
                 <div key={cat} onClick={() => setMenuCat(cat)}
                   style={{ background:menuCat===cat?"#8a1f2b":"transparent", color:menuCat===cat?"#fff":"#4a3f36", borderRadius:12, padding:"13px 16px", font:"600 14px/1 'DM Sans'", marginBottom:6, cursor:"pointer" }}>{cat}</div>
@@ -701,20 +708,20 @@ export default function SangamHotels() {
       ══════════════════════════════════════════════════════════════ */}
       {screen === "branches" && (
         <div>
-          <div style={{ padding:"50px 40px 32px", background:"#fff", borderBottom:"1px solid #ece2d2" }}>
+          <div style={{ padding:"40px 20px 28px", background:"#fff", borderBottom:"1px solid #ece2d2" }}>
             <div style={{ maxWidth:1180, margin:"0 auto" }}>
               <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".24em", textTransform:"uppercase", color:"#8a1f2b" }}>Our locations</div>
-              <h1 style={{ margin:"12px 0 8px", font:"700 44px/1.05 'Playfair Display'", color:"#2a201b" }}>7 branches across Hyderabad &amp; Telangana</h1>
-              <p style={{ margin:"0 0 24px", font:"400 15px/1.6 'DM Sans'", color:"#7a6e62" }}>Tiffins · Restaurant · Bakery · Hotel Rooms · Banquet Halls</p>
-              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+              <h1 style={{ margin:"12px 0 8px", font:"700 44px/1.05 'Playfair Display'", color:"#2a201b" }}>7 branches across Hyderabad</h1>
+              <p style={{ margin:"0 0 20px", font:"400 15px/1.6 'DM Sans'", color:"#7a6e62" }}>Tiffins · Restaurant · Bakery · Hotel Rooms · Banquet Halls</p>
+              <div className="branch-filters" style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
                 {branchTypes.map(t => (
-                  <span key={t} onClick={() => setBranchFilter(t)} style={{ background:branchFilter===t?"#8a1f2b":"#fbf6ec", color:branchFilter===t?"#fff":"#4a3f36", border:branchFilter===t?"none":"1px solid #e9dcc8", borderRadius:24, padding:"10px 20px", font:"600 13px/1 'DM Sans'", cursor:"pointer" }}>{t}</span>
+                  <span key={t} onClick={() => setBranchFilter(t)} style={{ background:branchFilter===t?"#8a1f2b":"#fbf6ec", color:branchFilter===t?"#fff":"#4a3f36", border:branchFilter===t?"none":"1px solid #e9dcc8", borderRadius:24, padding:"10px 18px", font:"600 13px/1 'DM Sans'", cursor:"pointer", flexShrink:0 }}>{t}</span>
                 ))}
               </div>
             </div>
           </div>
 
-          <div style={{ maxWidth:1180, margin:"0 auto", padding:"36px 40px 64px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:22 }}>
+          <div style={{ maxWidth:1180, margin:"0 auto", padding:"28px 20px 64px" }} className="grid-branches">
             {filteredBranches.map(b => (
               <div key={b.id} style={{ border:"1px solid #ece2d2", borderRadius:22, overflow:"hidden", background:"#fff", boxShadow:"0 12px 30px rgba(60,40,20,.06)" }}>
                 <div style={{ position:"relative", height:180, background:"linear-gradient(135deg,#caa24a,#7a3018)", overflow:"hidden" }}>
@@ -759,11 +766,11 @@ export default function SangamHotels() {
           </div>
 
           {/* HALLS */}
-          <div style={{ maxWidth:1180, margin:"0 auto", padding:"60px 40px 20px" }}>
+          <div style={{ maxWidth:1180, margin:"0 auto", padding:"48px 20px 20px" }}>
             <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".24em", textTransform:"uppercase", color:"#8a1f2b", marginBottom:12 }}>Our halls</div>
             <h2 style={{ margin:"0 0 8px", font:"700 36px/1.05 'Playfair Display'", color:"#2a201b" }}>Four air-conditioned banquet halls</h2>
-            <p style={{ margin:"0 0 32px", font:"400 15px/1.6 'DM Sans'", color:"#7a6e62" }}>Peerzadiguda (HQ) features our largest halls. Hayathnagar hall for smaller events.</p>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:20 }}>
+            <p style={{ margin:"0 0 32px", font:"400 15px/1.6 'DM Sans'", color:"#7a6e62" }}>Peerzadiguda (HQ) features our largest halls. Hayathnagar for smaller events.</p>
+            <div className="grid-4" style={{ maxWidth:"100%" }}>
               {[
                 { name:"Sangamam Hall", cap:600, loc:"Peerzadiguda", icon:"🏛️", highlight:true, desc:"Grand wedding & reception hall" },
                 { name:"Arangam Hall", cap:300, loc:"Peerzadiguda", icon:"💍", highlight:false, desc:"Elegant banquet & engagement hall" },
@@ -787,7 +794,7 @@ export default function SangamHotels() {
           <div style={{ maxWidth:1180, margin:"0 auto", padding:"52px 40px 20px" }}>
             <h2 style={{ margin:"0 0 6px", font:"700 36px/1.05 'Playfair Display'", color:"#2a201b" }}>Catering packages</h2>
             <p style={{ margin:"0 0 32px", font:"400 15px/1.6 'DM Sans'", color:"#7a6e62" }}>Per-plate pricing, fully customisable menus — veg &amp; non-veg.</p>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:24 }}>
+            <div className="catering-pkgs">
               {[
                 { name:"Silver", price:"₹399", note:"/plate", desc:"2 starters · 4 mains · 2 sweets · rice &amp; breads · chilled beverages", popular:false, minGuests:"50+" },
                 { name:"Gold", price:"₹649", note:"/plate", desc:"4 starters · 6 mains · live counter · 3 sweets · welcome drinks &amp; juice", popular:true, minGuests:"100+" },
@@ -872,7 +879,7 @@ export default function SangamHotels() {
                 <div style={{ font:"400 13px/1.5 'DM Sans'", color:"#8a6a30", marginTop:4 }}>Pricing on request — call <strong>+91 90638 44021</strong> or <strong>+91 90638 44022</strong> to check availability &amp; rates.</div>
               </div>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:24 }}>
+            <div className="rooms-grid">
               {[
                 { title:"Single Room", desc:"Ideal for solo travellers & business guests", img:IMGS.room1, amenities:["📶 Free WiFi","❄️ AC","🛎️ Room service","🧺 Laundry","🍛 Restaurant access"] },
                 { title:"Double Room", desc:"Spacious room for couples & families", img:IMGS.room2, amenities:["📶 Free WiFi","❄️ AC","🛏️ Double bed","🧺 Laundry","🍛 Restaurant access"] },
@@ -920,7 +927,7 @@ export default function SangamHotels() {
       ══════════════════════════════════════════════════════════════ */}
       {screen === "about" && (
         <div>
-          <div style={{ maxWidth:1180, margin:"0 auto", padding:"70px 40px 60px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:52, alignItems:"center" }}>
+          <div style={{ maxWidth:1180, margin:"0 auto", padding:"48px 20px 48px" }} className="grid-2" data-gap="52">
             <div>
               <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".24em", textTransform:"uppercase", color:"#8a1f2b", marginBottom:14 }}>Our story</div>
               <h1 style={{ margin:"0 0 20px", font:"800 46px/1.06 'Playfair Display'", color:"#2a201b" }}>Hospitality from the heart, since 2022</h1>
@@ -947,10 +954,10 @@ export default function SangamHotels() {
             </div>
           </div>
 
-          <div style={{ background:"#241510", padding:"64px 40px" }}>
+          <div style={{ background:"#241510", padding:"56px 20px" }}>
             <div style={{ maxWidth:1180, margin:"0 auto" }}>
               <h2 style={{ margin:"0 0 36px", font:"700 34px/1.05 'Playfair Display'", color:"#fff", textAlign:"center" }}>What we stand for</h2>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:24 }}>
+              <div className="grid-3">
                 {[
                   { icon:"🌿", title:"Fresh, daily", desc:"Every dish is prepared fresh every morning. We never compromise on quality or freshness." },
                   { icon:"🤝", title:"Warm hospitality", desc:"Family-first service across every branch. Attentive, courteous, and professional staff." },
@@ -1006,7 +1013,7 @@ export default function SangamHotels() {
             </div>
           </div>
 
-          <div style={{ maxWidth:1180, margin:"0 auto", padding:"36px 40px 64px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:30 }}>
+          <div className="contact-layout">
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
               {/* All 7 branches pulled from BRANCHES array */}
               {BRANCHES.map(b => {
@@ -1079,7 +1086,7 @@ export default function SangamHotels() {
 
       {/* ── FOOTER ────────────────────────────────────────────────── */}
       <div style={{ background:"#1c100c", color:"#cdbba4", padding:"56px 40px 28px" }}>
-        <div style={{ maxWidth:1180, margin:"0 auto", display:"grid", gridTemplateColumns:"1.5fr 1fr 1.2fr 1fr", gap:36 }}>
+        <div className="footer-grid">
           <div>
             <Img src={IMGS.logo} alt="Sangam Hotels" style={{ height:42, width:"auto", opacity:.9, marginBottom:14 }} />
             <div style={{ font:"600 8px/1.4 'DM Sans'", letterSpacing:".26em", color:"#c79a3a", marginBottom:14, textTransform:"uppercase" }}>Hyderabad · Since 2022</div>
