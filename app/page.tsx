@@ -110,7 +110,7 @@ const BRANCHES = [
     phone: "+91 7337332609",
     hours: "6 AM – 11 PM",
     rating: "4.3",
-    img: "/malkapur-exterior-2.jpg",
+    img: IMGS.malkapur3,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Malkapur+Choutuppal",
     swiggy: "",
     zomato: "",
