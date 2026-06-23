@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 
-type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "contact";
+type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "contact" | "order";
 
 // ── Real images from sangamhotelshyderabad.com ──────────────────────────────
 const BASE = "https://www.sangamhotelshyderabad.com/wp-content/uploads";
@@ -52,6 +52,7 @@ const IMGS = {
 
   // ── Editorial / blog ──────────────────────────────────────────
   hotelHero:    `${BASE}/2025/08/Sangam-Hotel-Hyderabad-–-Redefining-Hospitality-Taste-and-Celebrations-1078x595.jpg`,
+  peerzExt:     `${BASE}/2025/09/Sangam-Hotel-By-Sameeksha-Hospitality-1078x595.jpg`,
   newBranch:    `${BASE}/2025/07/WhatsApp-Image-2025-07-07-at-15.12.37_d297b49e.jpg`,
 };
 
@@ -71,8 +72,10 @@ const BRANCHES = [
     phone2: "+91 90638 44022",
     hours: "24 Hours",
     rating: "4.5",
-    img: IMGS.room1,
+    img: IMGS.peerzExt,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Peerzadiguda+Hyderabad",
+    swiggy: "",
+    zomato: "https://www.zomato.com/hyderabad/sangam-hotel-l-b-nagar",
   },
   {
     id: "hayathnagar",
@@ -90,6 +93,8 @@ const BRANCHES = [
     rating: "4.6",
     img: IMGS.hayt1,
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Hayathnagar+Hyderabad",
+    swiggy: "https://www.swiggy.com/city/hyderabad/sangam-hotel-krupa-colony-vanasthalipuram-rest571085",
+    zomato: "https://www.zomato.com/hyderabad/sangam-hotel-vanasthalipuram",
   },
   {
     id: "malkapur",
@@ -105,8 +110,10 @@ const BRANCHES = [
     phone: "+91 7337332609",
     hours: "6 AM – 11 PM",
     rating: "4.3",
-    img: "/malkapur-exterior-1.jpg",
+    img: "/malkapur-exterior-2.jpg",
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Malkapur+Choutuppal",
+    swiggy: "",
+    zomato: "",
   },
   {
     id: "bakes-hayathnagar",
@@ -124,6 +131,8 @@ const BRANCHES = [
     rating: "4.5",
     img: IMGS.bakery,
     mapsLink: "https://share.google/hZbW0oHkG2KJbKdcU",
+    swiggy: "",
+    zomato: "https://www.zomato.com/hyderabad/sangam-bakes-cakes-vanasthalipuram/order",
   },
   {
     id: "bakes-mansoorabad",
@@ -141,6 +150,8 @@ const BRANCHES = [
     rating: "4.5",
     img: IMGS.bakery,
     mapsLink: "https://share.google/LvqnUASmK13LmXwYM",
+    swiggy: "",
+    zomato: "https://www.zomato.com/hyderabad/sangam-bakes-cakes-l-b-nagar/order",
   },
   {
     id: "tiffins-mansoorabad",
@@ -152,12 +163,14 @@ const BRANCHES = [
     badgeBorder: "#e9c2dd",
     type: ["Tiffins"],
     tagline: "South Indian Tiffins & Lunch",
-    address: "Mansoorabad, Hyderabad",
-    phone: "+91 90638 44021",
-    hours: "6 AM – 3 PM",
+    address: "Plot 134, Chitraseema Colony, Mansoorabad, L B Nagar, Hyderabad",
+    phone: "+91 73838 38166",
+    hours: "6:30 AM – 3 PM",
     rating: "4.4",
-    img: IMGS.hayt1,
+    img: IMGS.tiffins,
     mapsLink: "https://share.google/Cm4dgz1StJ9kDDozJ",
+    swiggy: "",
+    zomato: "",
   },
   {
     id: "tiffins-koyyalagudem",
@@ -168,13 +181,15 @@ const BRANCHES = [
     badgeBg: "#f7e3f0",
     badgeBorder: "#e9c2dd",
     type: ["Tiffins"],
-    tagline: "South Indian Tiffins & Lunch",
-    address: "Koyyalagudem, Choutuppal, Telangana",
+    tagline: "South Indian Tiffins & Dine-in",
+    address: "NH65, Yellagiri X-Roads, Koyyalagudem, Choutuppal, Nalgonda – 508252",
     phone: "+91 90638 44021",
     hours: "6 AM – 3 PM",
     rating: "4.4",
-    img: IMGS.hayt2,
+    img: IMGS.tiffins,
     mapsLink: "https://share.google/CvuJkWSxmb7AWI7U9",
+    swiggy: "",
+    zomato: "",
   },
 ];
 
@@ -262,6 +277,7 @@ export default function SangamHotels() {
   const [branchFilter, setBranchFilter] = useState("All");
   const [menuCat, setMenuCat] = useState("Tiffins");
   const [navOpen, setNavOpen] = useState(false);
+  const [orderBranch, setOrderBranch] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const go = (s: Screen) => () => setScreen(s);
@@ -308,7 +324,7 @@ export default function SangamHotels() {
               <a key={s} onClick={go(s)} style={nav(s)}>{s.charAt(0).toUpperCase()+s.slice(1)}</a>
             ))}
           </nav>
-          <button onClick={go("menu")} className="nav-order-btn" style={{ background:"#8a1f2b", color:"#fff", font:"600 14px/1 'DM Sans'", padding:"13px 22px", borderRadius:30, border:"none", cursor:"pointer", boxShadow:"0 8px 20px rgba(138,31,43,.22)" }}>
+          <button onClick={go("order")} className="nav-order-btn" style={{ background:"#8a1f2b", color:"#fff", font:"600 14px/1 'DM Sans'", padding:"13px 22px", borderRadius:30, border:"none", cursor:"pointer", boxShadow:"0 8px 20px rgba(138,31,43,.22)" }}>
             Order Online
           </button>
           <button className="hamburger" onClick={() => setNavOpen(o => !o)} aria-label="Menu">
@@ -322,7 +338,7 @@ export default function SangamHotels() {
           {(["home","menu","branches","catering","rooms","about","contact"] as Screen[]).map(s => (
             <a key={s} onClick={() => { go(s)(); setNavOpen(false); }}>{s.charAt(0).toUpperCase()+s.slice(1)}</a>
           ))}
-          <a onClick={() => { go("menu")(); setNavOpen(false); }} style={{ background:"#8a1f2b", color:"#fff !important" as "inherit", margin:"8px 16px", borderRadius:10, textAlign:"center", border:"none" }}>🛒 Order Online</a>
+          <a onClick={() => { go("order")(); setNavOpen(false); }} style={{ background:"#8a1f2b", color:"#fff !important" as "inherit", margin:"8px 16px", borderRadius:10, textAlign:"center", border:"none" }}>🛒 Order Online</a>
         </div>
       </div>
 
@@ -344,7 +360,7 @@ export default function SangamHotels() {
               <h1 className="hero-title">Authentic South Indian, freshly made across Hyderabad</h1>
               <p className="hero-subtitle">Tiffins, full meals, bakery &amp; banquets — order online, book catering, or stay with us.</p>
               <div className="hero-ctas">
-                <button onClick={go("menu")} style={{ display:"inline-flex", alignItems:"center", gap:9, background:"#c79a3a", color:"#2a1c06", font:"700 16px/1 'DM Sans'", padding:"16px 28px", borderRadius:36, border:"none", cursor:"pointer", boxShadow:"0 12px 28px rgba(199,154,58,.4)" }}>
+                <button onClick={go("order")} style={{ display:"inline-flex", alignItems:"center", gap:9, background:"#c79a3a", color:"#2a1c06", font:"700 16px/1 'DM Sans'", padding:"16px 28px", borderRadius:36, border:"none", cursor:"pointer", boxShadow:"0 12px 28px rgba(199,154,58,.4)" }}>
                   🛒 Order Online
                 </button>
                 <button onClick={go("catering")} style={{ display:"inline-flex", alignItems:"center", gap:9, background:"rgba(255,255,255,.12)", color:"#fff", font:"600 16px/1 'DM Sans'", padding:"16px 26px", borderRadius:36, border:"1.5px solid rgba(255,255,255,.5)", cursor:"pointer" }}>
@@ -1194,7 +1210,7 @@ export default function SangamHotels() {
       )}
 
       {/* ── FOOTER ────────────────────────────────────────────────── */}
-      <div style={{ background:"#1c100c", color:"#cdbba4", padding:"56px 40px 28px" }}>
+      {screen !== "order" && <div style={{ background:"#1c100c", color:"#cdbba4", padding:"56px 40px 28px" }}>
         <div className="footer-grid">
           <div>
             <Img src={IMGS.logo} alt="Sangam Hotels" style={{ height:42, width:"auto", opacity:.9, marginBottom:14 }} />
@@ -1251,7 +1267,7 @@ export default function SangamHotels() {
           <span>© {new Date().getFullYear()} Sangam Hotels Hyderabad · All rights reserved</span>
           <span>Privacy · Terms · <span style={{ color:"#8a7a6c" }}>Powered by <a href="https://restros.ai" target="_blank" rel="noopener noreferrer" style={{ color:"#c79a3a", fontWeight:600 }}>restros.ai</a></span></span>
         </div>
-      </div>
+      </div>}
 
       {/* ── FLOATING CHATBOT ──────────────────────────────────────── */}
       {chatOpen && (
@@ -1283,6 +1299,169 @@ export default function SangamHotels() {
             <div style={{ flex:1, background:"#f3eee0", borderRadius:22, padding:"12px 16px", font:"500 13px/1 'DM Sans'", color:"#9b8c78" }}>Ask about menu, catering, rooms…</div>
             <div style={{ width:38, height:38, borderRadius:"50%", background:"#8a1f2b", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", font:"700 15px/1 'DM Sans'", cursor:"pointer" }}>➤</div>
           </div>
+        </div>
+      )}
+
+      {/* ── ORDER ONLINE SCREEN ─────────────────────────────── */}
+      {screen === "order" && (
+        <div style={{ minHeight:"100vh", background:"#fbf6ec" }}>
+          {/* Header */}
+          <div style={{ background:"linear-gradient(135deg,#2a1c06,#4a2810)", padding:"60px 40px 48px", textAlign:"center" }}>
+            <p style={{ font:"600 11px/1 'DM Sans'", color:"#c79a3a", letterSpacing:".14em", textTransform:"uppercase", margin:"0 0 14px" }}>SANGAM HOTELS</p>
+            <h1 style={{ margin:"0 0 14px", font:"800 46px/1.06 'Playfair Display'", color:"#fff" }}>Order Online</h1>
+            <p style={{ margin:"0 auto", font:"400 17px/1.65 'DM Sans'", color:"#c9bfb2", maxWidth:480 }}>
+              Fresh food from your nearest branch — delivered hot or ready for pickup.
+            </p>
+          </div>
+
+          {!orderBranch ? (
+            /* Step 1 — Branch selection */
+            <div className="sec-pad" style={{ maxWidth:1180, margin:"0 auto" }}>
+              <div style={{ textAlign:"center", marginBottom:36 }}>
+                <h2 style={{ font:"700 26px/1 'Playfair Display'", color:"#2a1c06", margin:"0 0 10px" }}>Select your branch</h2>
+                <p style={{ font:"400 15px/1.5 'DM Sans'", color:"#7a6c5e", margin:0 }}>Choose the location you'd like to order from</p>
+              </div>
+              <div className="grid-3" style={{ gap:20 }}>
+                {BRANCHES.map(b => {
+                  const hasDelivery = !!(b.swiggy || b.zomato);
+                  return (
+                    <div key={b.id}
+                      onClick={() => setOrderBranch(b.id)}
+                      style={{ background:"#fff", border:"1.5px solid #ece2d2", borderRadius:18, overflow:"hidden", cursor:"pointer", transition:"transform .18s ease, box-shadow .18s ease, border-color .18s ease", boxShadow:"0 4px 16px rgba(60,40,20,.06)" }}
+                      onMouseEnter={e => { const el = e.currentTarget as HTMLDivElement; el.style.transform="translateY(-4px)"; el.style.boxShadow="0 16px 40px rgba(60,40,20,.14)"; el.style.borderColor="#c79a3a"; }}
+                      onMouseLeave={e => { const el = e.currentTarget as HTMLDivElement; el.style.transform="translateY(0)"; el.style.boxShadow="0 4px 16px rgba(60,40,20,.06)"; el.style.borderColor="#ece2d2"; }}
+                    >
+                      <div className="imgwrap" style={{ height:130, position:"relative" }}>
+                        <img src={b.img} alt={b.name} style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
+                        <div style={{ position:"absolute", top:10, right:10, background:hasDelivery?"#1a8a3a":"#7a5a2a", color:"#fff", font:"700 10px/1 'DM Sans'", padding:"5px 10px", borderRadius:10, letterSpacing:".05em" }}>
+                          {hasDelivery ? "🛵 DELIVERY" : "📦 PICKUP ONLY"}
+                        </div>
+                      </div>
+                      <div style={{ padding:"14px 16px 16px" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6, flexWrap:"wrap" }}>
+                          <span style={{ font:"700 10px/1 'DM Sans'", color:b.badgeColor, background:b.badgeBg, border:`1px solid ${b.badgeBorder}`, borderRadius:6, padding:"3px 8px", letterSpacing:".05em" }}>{b.badge}</span>
+                          {b.swiggy && <span style={{ font:"700 9px/1 'DM Sans'", color:"#ff5200", background:"#fff0e6", border:"1px solid #ffd4b3", borderRadius:6, padding:"3px 7px" }}>SWIGGY</span>}
+                          {b.zomato && <span style={{ font:"700 9px/1 'DM Sans'", color:"#e23744", background:"#fdeaec", border:"1px solid #f8b8be", borderRadius:6, padding:"3px 7px" }}>ZOMATO</span>}
+                        </div>
+                        <h3 style={{ margin:"0 0 3px", font:"700 15px/1.3 'DM Sans'", color:"#2a1c06" }}>{b.shortName}</h3>
+                        <p style={{ margin:"0 0 12px", font:"400 12px/1.5 'DM Sans'", color:"#7a6c5e" }}>{b.tagline}</p>
+                        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                          <span style={{ font:"500 11px/1 'DM Sans'", color:"#7a6c5e" }}>⏰ {b.hours}</span>
+                          <span style={{ font:"700 12px/1 'DM Sans'", color:"#8a1f2b" }}>Select →</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (() => {
+            /* Step 2 — Platform selection */
+            const branch = BRANCHES.find(b => b.id === orderBranch)!;
+            return (
+              <div style={{ maxWidth:720, margin:"0 auto", padding:"48px 24px 80px" }}>
+                <button onClick={() => setOrderBranch(null)} style={{ background:"none", border:"none", color:"#8a1f2b", font:"600 14px/1 'DM Sans'", cursor:"pointer", padding:"0 0 28px", display:"flex", alignItems:"center", gap:6 }}>
+                  ← Back to branches
+                </button>
+
+                {/* Selected branch bar */}
+                <div style={{ background:"#fff", border:"1.5px solid #c79a3a", borderRadius:20, padding:"18px 22px", marginBottom:32, display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+                  <div style={{ width:56, height:56, borderRadius:12, overflow:"hidden", flexShrink:0 }}>
+                    <img src={branch.img} alt={branch.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ margin:"0 0 3px", font:"700 15px/1.2 'Playfair Display'", color:"#2a1c06" }}>{branch.name}</p>
+                    <p style={{ margin:"0 0 3px", font:"400 12px/1.4 'DM Sans'", color:"#7a6c5e", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{branch.address}</p>
+                    <p style={{ margin:0, font:"600 12px/1 'DM Sans'", color:"#1a8a3a" }}>⏰ {branch.hours}</p>
+                  </div>
+                  <a href={`tel:${branch.phone}`} style={{ background:"#8a1f2b", color:"#fff", font:"600 13px/1 'DM Sans'", padding:"10px 18px", borderRadius:20, textDecoration:"none", flexShrink:0 }}>
+                    📞 Call
+                  </a>
+                </div>
+
+                <h2 style={{ font:"700 22px/1 'Playfair Display'", color:"#2a1c06", margin:"0 0 6px" }}>How would you like to order?</h2>
+                <p style={{ font:"400 14px/1.5 'DM Sans'", color:"#7a6c5e", margin:"0 0 24px" }}>Choose a platform or call us to order directly.</p>
+
+                {/* Platform grid */}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:24 }}>
+
+                  {/* Swiggy */}
+                  {branch.swiggy ? (
+                    <a href={branch.swiggy} target="_blank" rel="noopener noreferrer"
+                      style={{ background:"#fff7f2", border:"2px solid #ff5200", borderRadius:18, padding:"22px 18px", textDecoration:"none", display:"flex", flexDirection:"column", gap:10, transition:"transform .15s ease, box-shadow .15s ease" }}
+                      onMouseEnter={e => { const el = e.currentTarget as HTMLAnchorElement; el.style.transform="translateY(-3px)"; el.style.boxShadow="0 12px 32px rgba(255,82,0,.2)"; }}
+                      onMouseLeave={e => { const el = e.currentTarget as HTMLAnchorElement; el.style.transform="none"; el.style.boxShadow="none"; }}>
+                      <div style={{ font:"800 20px/1 'DM Sans'", color:"#ff5200" }}>🛵 Swiggy</div>
+                      <div>
+                        <p style={{ margin:"0 0 3px", font:"600 14px/1 'DM Sans'", color:"#2a1c06" }}>Order on Swiggy</p>
+                        <p style={{ margin:0, font:"400 12px/1.4 'DM Sans'", color:"#7a6c5e" }}>Fast delivery · Real-time tracking</p>
+                      </div>
+                      <span style={{ font:"700 13px/1 'DM Sans'", color:"#ff5200", marginTop:"auto" }}>Order now →</span>
+                    </a>
+                  ) : (
+                    <div style={{ background:"#f9f5f0", border:"2px dashed #d8c8ad", borderRadius:18, padding:"22px 18px", display:"flex", flexDirection:"column", gap:10, opacity:.55 }}>
+                      <div style={{ font:"800 20px/1 'DM Sans'", color:"#b8a898" }}>🛵 Swiggy</div>
+                      <p style={{ margin:0, font:"600 13px/1 'DM Sans'", color:"#7a6c5e" }}>Coming soon</p>
+                    </div>
+                  )}
+
+                  {/* Zomato */}
+                  {branch.zomato ? (
+                    <a href={branch.zomato} target="_blank" rel="noopener noreferrer"
+                      style={{ background:"#fff2f3", border:"2px solid #e23744", borderRadius:18, padding:"22px 18px", textDecoration:"none", display:"flex", flexDirection:"column", gap:10, transition:"transform .15s ease, box-shadow .15s ease" }}
+                      onMouseEnter={e => { const el = e.currentTarget as HTMLAnchorElement; el.style.transform="translateY(-3px)"; el.style.boxShadow="0 12px 32px rgba(226,55,68,.2)"; }}
+                      onMouseLeave={e => { const el = e.currentTarget as HTMLAnchorElement; el.style.transform="none"; el.style.boxShadow="none"; }}>
+                      <div style={{ font:"800 20px/1 'DM Sans'", color:"#e23744" }}>🍽️ Zomato</div>
+                      <div>
+                        <p style={{ margin:"0 0 3px", font:"600 14px/1 'DM Sans'", color:"#2a1c06" }}>Order on Zomato</p>
+                        <p style={{ margin:0, font:"400 12px/1.4 'DM Sans'", color:"#7a6c5e" }}>Delivery & takeaway · Reviews</p>
+                      </div>
+                      <span style={{ font:"700 13px/1 'DM Sans'", color:"#e23744", marginTop:"auto" }}>Order now →</span>
+                    </a>
+                  ) : (
+                    <div style={{ background:"#f9f5f0", border:"2px dashed #d8c8ad", borderRadius:18, padding:"22px 18px", display:"flex", flexDirection:"column", gap:10, opacity:.55 }}>
+                      <div style={{ font:"800 20px/1 'DM Sans'", color:"#b8a898" }}>🍽️ Zomato</div>
+                      <p style={{ margin:0, font:"600 13px/1 'DM Sans'", color:"#7a6c5e" }}>Coming soon</p>
+                    </div>
+                  )}
+
+                  {/* Self Pickup */}
+                  <div style={{ background:"#f2faf5", border:"2px solid #1a8a3a", borderRadius:18, padding:"22px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+                    <div style={{ font:"800 20px/1 'DM Sans'", color:"#1a8a3a" }}>📦 Pickup</div>
+                    <div>
+                      <p style={{ margin:"0 0 3px", font:"600 14px/1 'DM Sans'", color:"#2a1c06" }}>Self Pickup</p>
+                      <p style={{ margin:0, font:"400 12px/1.4 'DM Sans'", color:"#7a6c5e" }}>Call ahead, collect at branch</p>
+                    </div>
+                    <a href={`tel:${branch.phone}`}
+                      style={{ font:"700 13px/1 'DM Sans'", color:"#fff", background:"#1a8a3a", padding:"11px 14px", borderRadius:12, textDecoration:"none", textAlign:"center", marginTop:"auto" }}>
+                      📞 {branch.phone}
+                    </a>
+                  </div>
+
+                  {/* PetPooja */}
+                  <div style={{ background:"#f5f2fa", border:"2px dashed #c8b8d8", borderRadius:18, padding:"22px 18px", display:"flex", flexDirection:"column", gap:10, opacity:.55 }}>
+                    <div style={{ font:"800 20px/1 'DM Sans'", color:"#7a5a9a" }}>🍕 PetPooja</div>
+                    <div>
+                      <p style={{ margin:"0 0 3px", font:"600 14px/1 'DM Sans'", color:"#7a6c5e" }}>PetPooja Direct</p>
+                      <p style={{ margin:0, font:"400 12px/1.4 'DM Sans'", color:"#a99c8c" }}>Online ordering — coming soon</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Directions */}
+                <div style={{ background:"#fff", border:"1px solid #ece2d2", borderRadius:16, padding:"16px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+                  <div>
+                    <p style={{ margin:"0 0 3px", font:"600 13px/1 'DM Sans'", color:"#2a1c06" }}>📍 {branch.shortName}</p>
+                    <p style={{ margin:0, font:"400 12px/1.4 'DM Sans'", color:"#7a6c5e" }}>{branch.address}</p>
+                  </div>
+                  <a href={branch.mapsLink} target="_blank" rel="noopener noreferrer"
+                    style={{ background:"#2a1c06", color:"#c79a3a", font:"700 13px/1 'DM Sans'", padding:"12px 20px", borderRadius:20, textDecoration:"none", flexShrink:0 }}>
+                    Get Directions →
+                  </a>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
