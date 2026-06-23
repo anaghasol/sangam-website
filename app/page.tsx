@@ -278,6 +278,7 @@ export default function SangamHotels() {
   const [menuCat, setMenuCat] = useState("Tiffins");
   const [navOpen, setNavOpen] = useState(false);
   const [orderBranch, setOrderBranch] = useState<string | null>(null);
+  const [menuBranchId, setMenuBranchId] = useState("hayathnagar");
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const go = (s: Screen) => () => setScreen(s);
@@ -504,7 +505,7 @@ export default function SangamHotels() {
                     <p style={{ margin:"6px 0 12px", font:"400 13px/1.5 'DM Sans'", color:"#9b8c78" }}>{dish.desc}</p>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                       <span style={{ font:"700 18px/1 'DM Sans'", color:"#2a201b" }}>{dish.price}</span>
-                      <button onClick={() => setChatOpen(true)} style={{ background:"#fff", border:"1.5px solid #8a1f2b", color:"#8a1f2b", borderRadius:20, padding:"8px 16px", font:"600 13px/1 'DM Sans'", cursor:"pointer" }}>Add +</button>
+                      <button onClick={go("order")} style={{ background:"#fff", border:"1.5px solid #8a1f2b", color:"#8a1f2b", borderRadius:20, padding:"8px 16px", font:"600 13px/1 'DM Sans'", cursor:"pointer" }}>Add +</button>
                     </div>
                   </div>
                 </div>
@@ -709,23 +710,46 @@ export default function SangamHotels() {
       {/* ══════════════════════════════════════════════════════════════
           MENU
       ══════════════════════════════════════════════════════════════ */}
-      {screen === "menu" && (
+      {screen === "menu" && (() => {
+        const mb = BRANCHES.find(b => b.id === menuBranchId) ?? BRANCHES[1];
+        const mSwiggy = mb.swiggy || "";
+        const mZomato = mb.zomato || "";
+        const mOrder  = mSwiggy || mZomato || "#";
+        return (
         <div>
           <div style={{ padding:"48px 40px 28px", background:"#fff", borderBottom:"1px solid #ece2d2" }}>
             <div style={{ maxWidth:1180, margin:"0 auto" }}>
               <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".24em", textTransform:"uppercase", color:"#8a1f2b" }}>Order online</div>
               <h1 style={{ margin:"12px 0 24px", font:"700 44px/1.05 'Playfair Display'", color:"#2a201b" }}>Menu &amp; Ordering</h1>
               <div style={{ display:"flex", flexWrap:"wrap", gap:14, alignItems:"center" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:9, background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:30, padding:"11px 18px" }}>
+                {/* Branch selector */}
+                <div style={{ display:"flex", alignItems:"center", gap:9, background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:30, padding:"10px 18px" }}>
                   <span style={{ font:"600 11px/1 'DM Sans'", color:"#9b8c78", letterSpacing:".04em" }}>BRANCH</span>
-                  <span style={{ font:"600 14px/1 'DM Sans'", color:"#2a201b" }}>Peerzadiguda ▾</span>
+                  <select value={menuBranchId} onChange={e => setMenuBranchId(e.target.value)}
+                    style={{ background:"transparent", border:"none", font:"600 14px/1 'DM Sans'", color:"#2a201b", cursor:"pointer", outline:"none" }}>
+                    {BRANCHES.filter(b => b.type.includes("Restaurant") || b.type.includes("Tiffins")).map(b => (
+                      <option key={b.id} value={b.id}>{b.shortName}</option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{ display:"flex", background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:30, padding:4 }}>
                   {["Delivery","Takeaway","Dine-in"].map((t,i) => (
                     <span key={t} style={{ background:i===0?"#8a1f2b":"transparent", color:i===0?"#fff":"#6f655b", borderRadius:24, padding:"9px 18px", font:"600 13px/1 'DM Sans'", cursor:"pointer" }}>{t}</span>
                   ))}
                 </div>
-                <div style={{ background:"#f9f3e9", border:"1px solid #e9dcc8", borderRadius:30, padding:"10px 18px", font:"500 13px/1 'DM Sans'", color:"#9b8c78" }}>🛵 Swiggy &nbsp;|&nbsp; 🍽️ Zomato</div>
+                {/* Quick order links */}
+                <div style={{ display:"flex", gap:8 }}>
+                  {mSwiggy ? (
+                    <a href={mSwiggy} target="_blank" rel="noopener noreferrer"
+                      style={{ background:"#fff7f0", border:"1px solid #ffd4b0", borderRadius:30, padding:"10px 18px", font:"600 13px/1 'DM Sans'", color:"#e07322", textDecoration:"none" }}>🛵 Swiggy</a>
+                  ) : null}
+                  {mZomato ? (
+                    <a href={mZomato} target="_blank" rel="noopener noreferrer"
+                      style={{ background:"#fff5f0", border:"1px solid #ffb8a0", borderRadius:30, padding:"10px 18px", font:"600 13px/1 'DM Sans'", color:"#cb202d", textDecoration:"none" }}>🍽️ Zomato</a>
+                  ) : (
+                    <span style={{ background:"#f9f3e9", border:"1px solid #e9dcc8", borderRadius:30, padding:"10px 18px", font:"500 13px/1 'DM Sans'", color:"#9b8c78" }}>📦 Pickup only</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -816,17 +840,31 @@ export default function SangamHotels() {
                 <div style={{ font:"700 19px/1 'Playfair Display'", color:"#2a201b", marginBottom:18 }}>🛒 Your order</div>
                 <div style={{ background:"#fbf6ec", borderRadius:12, padding:"18px 16px", textAlign:"center", color:"#9b8c78", font:"500 14px/1.5 'DM Sans'" }}>Add items to get started</div>
                 <div style={{ height:1, background:"#ece2d2", margin:"18px 0" }} />
-                <button onClick={() => setChatOpen(true)} style={{ width:"100%", background:"#8a1f2b", color:"#fff", border:"none", borderRadius:26, padding:14, font:"600 15px/1 'DM Sans'", cursor:"pointer", marginBottom:12 }}>Checkout →</button>
+                <a href={mZomato || mSwiggy || "#"} target="_blank" rel="noopener noreferrer"
+                  style={{ width:"100%", display:"block", textAlign:"center", background:"#8a1f2b", color:"#fff", borderRadius:26, padding:14, font:"600 15px/1 'DM Sans'", cursor:"pointer", marginBottom:12, textDecoration:"none" }}>
+                  Checkout →
+                </a>
                 <div style={{ textAlign:"center", font:"500 12px/1.5 'DM Sans'", color:"#9b8c78", marginBottom:12 }}>— or order via —</div>
                 <div style={{ display:"flex", gap:10 }}>
-                  <div style={{ flex:1, textAlign:"center", background:"#fff7f0", border:"1px solid #ffd4b0", borderRadius:12, padding:12, font:"600 13px/1 'DM Sans'", color:"#e07322", cursor:"pointer" }}>🛵 Swiggy</div>
-                  <div style={{ flex:1, textAlign:"center", background:"#fff5f0", border:"1px solid #ffb8a0", borderRadius:12, padding:12, font:"600 13px/1 'DM Sans'", color:"#cb202d", cursor:"pointer" }}>🍽️ Zomato</div>
+                  {mSwiggy ? (
+                    <a href={mSwiggy} target="_blank" rel="noopener noreferrer"
+                      style={{ flex:1, textAlign:"center", background:"#fff7f0", border:"1px solid #ffd4b0", borderRadius:12, padding:12, font:"600 13px/1 'DM Sans'", color:"#e07322", textDecoration:"none" }}>🛵 Swiggy</a>
+                  ) : (
+                    <span style={{ flex:1, textAlign:"center", background:"#f4f0eb", border:"1px solid #ddd5c8", borderRadius:12, padding:12, font:"600 13px/1 'DM Sans'", color:"#b8a898", opacity:.5 }}>🛵 Swiggy</span>
+                  )}
+                  {mZomato ? (
+                    <a href={mZomato} target="_blank" rel="noopener noreferrer"
+                      style={{ flex:1, textAlign:"center", background:"#fff5f0", border:"1px solid #ffb8a0", borderRadius:12, padding:12, font:"600 13px/1 'DM Sans'", color:"#cb202d", textDecoration:"none" }}>🍽️ Zomato</a>
+                  ) : (
+                    <span style={{ flex:1, textAlign:"center", background:"#f4f0eb", border:"1px solid #ddd5c8", borderRadius:12, padding:12, font:"600 13px/1 'DM Sans'", color:"#b8a898", opacity:.5 }}>🍽️ Zomato</span>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════
           BRANCHES
