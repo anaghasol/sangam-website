@@ -18,7 +18,7 @@ body { background: #fbf6ec; -webkit-font-smoothing: antialiased; color: #2a201b;
 
 /* ── Infinite marquee carousel ─────────────────────── */
 @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-.marquee-track { display: flex; gap: 24px; width: max-content; animation: marquee 36s linear infinite; }
+.marquee-track { display: flex; gap: 24px; width: max-content; animation: marquee 80s linear infinite; }
 .marquee-track:hover { animation-play-state: paused; }
 .marquee-wrap { overflow: hidden; position: relative; }
 .marquee-wrap::before, .marquee-wrap::after {

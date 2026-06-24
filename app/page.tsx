@@ -716,14 +716,19 @@ export default function SangamHotels() {
               <h2 style={{ margin:"14px 0 8px", font:"700 42px/1.05 'Playfair Display'", color:"#fff" }}>What our guests say</h2>
               <p style={{ font:"400 16px/1 'DM Sans'", color:"#9b8c78", margin:0 }}>⭐⭐⭐⭐⭐ from all our branches across Hyderabad</p>
             </div>
-            {/* Marquee — rendered twice for seamless loop */}
+            {/* Marquee — seamless loop; pad to ≥20 cards so no early repeat */}
             <div className="marquee-wrap">
               <div className="marquee-track">
-                {[...liveReviews, ...liveReviews].map((r, i) => (
-                  <div key={i} style={{ flexShrink:0, width:380, background:"#2f1d16", border:"1px solid #4a382c", borderRadius:20, padding:"28px 30px" }}>
+                {(() => {
+                  const only5Stars = liveReviews.filter(r => r.stars === "★★★★★" || (r.stars?.length ?? 0) >= 5);
+                  const pool = only5Stars.length >= 6 ? only5Stars : liveReviews;
+                  // Duplicate enough times so there are at least 20 unique cards before loop
+                  const times = Math.max(2, Math.ceil(20 / pool.length));
+                  return Array.from({ length: times }, () => pool).flat().map((r, i) => (
+                  <div key={i} style={{ flexShrink:0, width:400, background:"#2f1d16", border:"1px solid #4a382c", borderRadius:20, padding:"28px 30px" }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-                      <div style={{ color:"#e7cd8f", font:"600 18px/1 'DM Sans'" }}>★★★★★</div>
-                      <div style={{ font:"600 11px/1 'DM Sans'", color:"#c79a3a", letterSpacing:".06em", textTransform:"uppercase", background:"rgba(199,154,58,.12)", borderRadius:20, padding:"5px 10px" }}>{r.branch}</div>
+                      <div style={{ color:"#e7cd8f", font:"600 18px/1 'DM Sans'" }}>{r.stars}</div>
+                      <div style={{ font:"600 11px/1 'DM Sans'", color:"#c79a3a", letterSpacing:".06em", textTransform:"uppercase", background:"rgba(199,154,58,.12)", borderRadius:20, padding:"5px 10px", maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.branch}</div>
                     </div>
                     <p style={{ margin:"0 0 20px", font:"400 14.5px/1.75 'DM Sans'", color:"#e7dccd" }}>&ldquo;{r.text}&rdquo;</p>
                     <div style={{ borderTop:"1px solid #3d2a20", paddingTop:14, display:"flex", alignItems:"center", gap:10 }}>
@@ -736,7 +741,8 @@ export default function SangamHotels() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                })()}
               </div>
             </div>
           </div>
@@ -1181,11 +1187,15 @@ export default function SangamHotels() {
             <div className="marquee-wrap" style={{ "--before-bg":"linear-gradient(to right,#fbf6ec,transparent)", "--after-bg":"linear-gradient(to left,#fbf6ec,transparent)" } as React.CSSProperties}>
               <style>{`.marquee-wrap::before{background:linear-gradient(to right,#fbf6ec,transparent)}.marquee-wrap::after{background:linear-gradient(to left,#fbf6ec,transparent)}`}</style>
               <div className="marquee-track">
-                {[...TESTIMONIALS, ...TESTIMONIALS].map((r,i) => (
+                {(() => {
+                  const pool5 = liveReviews.filter(r => r.stars === "★★★★★" || (r.stars?.length ?? 0) >= 5);
+                  const pool = pool5.length >= 6 ? pool5 : liveReviews;
+                  const times = Math.max(2, Math.ceil(20 / pool.length));
+                  return Array.from({ length: times }, () => pool).flat().map((r, i) => (
                   <div key={i} style={{ flexShrink:0, width:360, border:"1px solid #ece2d2", borderRadius:18, padding:"26px 28px", background:"#fff", boxShadow:"0 8px 24px rgba(60,40,20,.06)" }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-                      <div style={{ color:"#e7a010", font:"600 16px/1 'DM Sans'" }}>★★★★★</div>
-                      <div style={{ font:"600 11px/1 'DM Sans'", color:"#8a1f2b", letterSpacing:".04em", textTransform:"uppercase", background:"rgba(138,31,43,.07)", borderRadius:16, padding:"5px 10px" }}>{r.branch}</div>
+                      <div style={{ color:"#e7a010", font:"600 16px/1 'DM Sans'" }}>{r.stars}</div>
+                      <div style={{ font:"600 11px/1 'DM Sans'", color:"#8a1f2b", letterSpacing:".04em", textTransform:"uppercase", background:"rgba(138,31,43,.07)", borderRadius:16, padding:"5px 10px", maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.branch}</div>
                     </div>
                     <p style={{ margin:"0 0 16px", font:"400 14px/1.75 'DM Sans'", color:"#4a3f36" }}>&ldquo;{r.text}&rdquo;</p>
                     <div style={{ display:"flex", alignItems:"center", gap:9, borderTop:"1px solid #f0e8d8", paddingTop:14 }}>
@@ -1196,7 +1206,8 @@ export default function SangamHotels() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                })()}
               </div>
             </div>
           </div>
