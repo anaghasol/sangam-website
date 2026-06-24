@@ -288,21 +288,32 @@ export default function SangamHotels() {
   const [liveReviews, setLiveReviews] = useState(TESTIMONIALS);
 
   useEffect(() => {
-    fetch("/api/reviews")
-      .then(r => r.json())
-      .then(data => {
-        if (data.reviews?.length >= 3) {
-          const converted = data.reviews.map((r: { author: string; rating: number; text: string; time: string; branch: string }) => ({
-            stars: "★".repeat(Math.min(5, Math.max(1, r.rating))),
-            text: r.text,
-            author: r.author,
-            location: r.time || "Hyderabad",
-            branch: r.branch,
-          }));
-          setLiveReviews(converted);
-        }
-      })
-      .catch(() => { /* keep static fallback */ });
+    function loadReviews() {
+      fetch("/api/reviews")
+        .then(r => r.json())
+        .then(data => {
+          if (data.reviews?.length >= 3) {
+            // Shuffle client-side each load for variety
+            const arr = [...data.reviews];
+            for (let i = arr.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            setLiveReviews(arr.map((r: { author: string; rating: number; text: string; time: string; branch: string }) => ({
+              stars: "★".repeat(Math.min(5, Math.max(1, r.rating))),
+              text: r.text,
+              author: r.author,
+              location: r.time || "Hyderabad",
+              branch: r.branch,
+            })));
+          }
+        })
+        .catch(() => {});
+    }
+    loadReviews();
+    // Re-shuffle every 5 minutes so the marquee feels fresh
+    const timer = setInterval(loadReviews, 5 * 60 * 1000);
+    return () => clearInterval(timer);
   }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
 

@@ -9,18 +9,18 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: { ...CORS, 'Access-Control-Allow-Methods': 'GET' } })
 }
 
-// Cache in-process between serverless warm invocations
 let cache: { data: ReviewsResponse; ts: number } | null = null
-const CACHE_TTL = 60 * 60 * 1000 // 1 hour
+const CACHE_TTL = 60 * 60 * 1000
 
+// Hardcoded place_ids to skip the textsearch step (faster + saves quota)
 const BRANCHES = [
-  { id: 'peerzadiguda',        query: 'Sangam Hotel Peerzadiguda Hyderabad India' },
-  { id: 'hayathnagar',         query: 'Sangam Hotel Hayathnagar Hyderabad India' },
-  { id: 'malkapur',            query: 'Sangam Hotel Malkapur Choutuppal Telangana' },
-  { id: 'bakes-hayathnagar',   query: 'Sangam Bakes Cakes Hayathnagar Hyderabad' },
-  { id: 'bakes-mansoorabad',   query: 'Sangam Bakes Cakes Mansoorabad LB Nagar Hyderabad' },
-  { id: 'tiffins-mansoorabad', query: 'Sangam Hotel Mansoorabad LB Nagar Hyderabad' },
-  { id: 'tiffins-koyyalagudem',query: 'Sangam Hotel Koyyalagudem Choutuppal Nalgonda' },
+  { id: 'peerzadiguda',         placeId: 'ChIJq9AcaqWfyzsR7AYE2m93hGU', name: 'Sangam Hotel Peerzadiguda' },
+  { id: 'hayathnagar',          placeId: 'ChIJb_7phrihyzsR0YdAt6ots2Y', name: 'Sangam Hotel Hayathnagar' },
+  { id: 'malkapur',             placeId: 'ChIJE4DWKCANyzsRmuj9lZBkAAA', name: 'Sangam Hotels · JIO BP Plaza' },
+  { id: 'bakes-hayathnagar',    placeId: 'ChIJvSPSRXmhyzsR_AfEtsejQzQ', name: 'Sangam Bakes and Cakes · Hayathnagar' },
+  { id: 'bakes-mansoorabad',    placeId: 'ChIJUX01EqOfyzsRWwVU_0mpvc0', name: 'Sangam Bakes and Cakes · Mansoorabad' },
+  { id: 'tiffins-mansoorabad',  placeId: 'ChIJfc0AtTGfyzsRfSHjjoCvM0M', name: 'Sangam Hotel · Mansoorabad' },
+  { id: 'tiffins-koyyalagudem', placeId: 'ChIJ8UbADUQNyzsRSsmPF9KvoIg', name: 'Sangam Hotel · Koyyalagudem' },
 ]
 
 export interface SangamReview {
@@ -30,7 +30,6 @@ export interface SangamReview {
   time: string
   branch: string
   branchId: string
-  photoUrl?: string
 }
 
 interface ReviewsResponse {
@@ -39,51 +38,71 @@ interface ReviewsResponse {
   branches: { id: string; rating: number; count: number }[]
 }
 
-async function fetchBranchReviews(
+interface GReview {
+  author_name: string
+  rating: number
+  text: string
+  relative_time_description: string
+}
+
+async function fetchDetails(placeId: string, sort: 'newest' | 'most_relevant', key: string): Promise<GReview[]> {
+  try {
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=reviews&reviews_sort=${sort}&key=${key}`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    const data = await res.json()
+    return data.result?.reviews || []
+  } catch {
+    return []
+  }
+}
+
+async function fetchBranch(
   branchId: string,
-  query: string,
+  placeId: string,
+  branchName: string,
   key: string
 ): Promise<{ reviews: SangamReview[]; rating: number; count: number }> {
   try {
-    const searchRes = await fetch(
-      `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${key}`,
+    // Fetch branch metadata + newest reviews in parallel, then most_relevant
+    const metaRes = await fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=rating,user_ratings_total,reviews&reviews_sort=newest&key=${key}`,
       { signal: AbortSignal.timeout(8000) }
     )
-    const searchData = await searchRes.json()
-    const place = searchData.results?.[0]
-    if (!place?.place_id) return { reviews: [], rating: 0, count: 0 }
+    const metaData = await metaRes.json()
+    const result = metaData.result || {}
+    const newestRaw: GReview[] = result.reviews || []
 
-    const branchLabel = place.name || query.split(' ').slice(0, 3).join(' ')
+    // Also fetch most_relevant to get a different set
+    const relevantRaw = await fetchDetails(placeId, 'most_relevant', key)
 
-    const detailsRes = await fetch(
-      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=name,rating,user_ratings_total,reviews&reviews_sort=newest&key=${key}`,
-      { signal: AbortSignal.timeout(8000) }
-    )
-    const details = await detailsRes.json()
-    const result = details.result || {}
+    // Merge and de-duplicate by author+text snippet
+    const seen = new Set<string>()
+    const merged: GReview[] = []
+    for (const r of [...newestRaw, ...relevantRaw]) {
+      const key = `${r.author_name}::${r.text?.slice(0, 40)}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        merged.push(r)
+      }
+    }
 
-    const reviews: SangamReview[] = (result.reviews || [])
-      .filter((r: { rating: number; text: string }) => r.rating >= 4 && r.text?.trim().length > 20)
-      .map((r: {
-        author_name: string
-        rating: number
-        text: string
-        relative_time_description: string
-        profile_photo_url?: string
-      }) => ({
+    const reviews: SangamReview[] = merged
+      .filter(r => r.rating >= 4 && r.text?.trim().length > 15)
+      .map(r => ({
         author: r.author_name,
         rating: r.rating,
-        text: r.text.trim().slice(0, 320),
+        text: r.text.trim().slice(0, 300),
         time: r.relative_time_description || '',
-        branch: branchLabel,
+        branch: branchName,
         branchId,
-        photoUrl: r.profile_photo_url,
       }))
 
     return {
       reviews,
-      rating: result.rating || place.rating || 0,
-      count: result.user_ratings_total || place.user_ratings_total || 0,
+      rating: result.rating || 0,
+      count: result.user_ratings_total || 0,
     }
   } catch {
     return { reviews: [], rating: 0, count: 0 }
@@ -101,7 +120,7 @@ export async function GET() {
   }
 
   const results = await Promise.allSettled(
-    BRANCHES.map(b => fetchBranchReviews(b.id, b.query, key))
+    BRANCHES.map(b => fetchBranch(b.id, b.placeId, b.name, key))
   )
 
   const allReviews: SangamReview[] = []
@@ -118,7 +137,7 @@ export async function GET() {
     }
   })
 
-  // Shuffle so branches interleave naturally in the marquee
+  // Fisher-Yates shuffle so branches interleave naturally
   for (let i = allReviews.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [allReviews[i], allReviews[j]] = [allReviews[j], allReviews[i]]
