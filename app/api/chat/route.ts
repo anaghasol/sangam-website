@@ -115,7 +115,7 @@ RULES FOR YOUR RESPONSES
 - End with a helpful nudge when relevant (e.g. "Want me to share the directions?" or "Shall I connect you with our catering team?")
 `
 
-const MODELS = ['llama-3.1-8b-instant', 'gemma2-9b-it', 'llama3-8b-8192']
+const MODELS = ['llama-3.3-70b-versatile', 'llama3-70b-8192', 'llama-3.1-8b-instant', 'gemma2-9b-it']
 
 async function callGroq(groqKey: string, model: string, msgs: { role: string; content: string }[]) {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
