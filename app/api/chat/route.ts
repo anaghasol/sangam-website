@@ -115,7 +115,13 @@ RULES FOR YOUR RESPONSES
 - End with a helpful nudge when relevant (e.g. "Want me to share the directions?" or "Shall I connect you with our catering team?")
 `
 
-const MODELS = ['llama-3.3-70b-versatile', 'llama3-70b-8192', 'llama-3.1-8b-instant', 'gemma2-9b-it']
+// Active Groq models as of 2026-06 (decommissioned ones removed)
+const MODELS = [
+  'llama-3.3-70b-versatile',            // primary — best quality
+  'meta-llama/llama-4-scout-17b-16e-instruct', // newer Llama 4, fast
+  'qwen/qwen3-32b',                      // 32B fallback
+  'llama-3.1-8b-instant',               // fast last-resort
+]
 
 async function callGroq(groqKey: string, model: string, msgs: { role: string; content: string }[]) {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -149,8 +155,7 @@ export async function POST(req: NextRequest) {
   for (const model of MODELS) {
     try {
       const data = await callGroq(groqKey, model, recentMsgs)
-      if (data.error?.code === 'rate_limit_exceeded') continue // try next model
-      if (data.error) break
+      if (data.error) { continue } // any error (rate limit, decommissioned, etc) → try next
       const reply = data.choices?.[0]?.message?.content?.trim()
       if (reply) return NextResponse.json({ reply })
     } catch {
