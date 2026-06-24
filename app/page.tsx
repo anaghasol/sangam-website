@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "contact" | "order";
 
@@ -285,6 +285,25 @@ export default function SangamHotels() {
   const [navOpen, setNavOpen] = useState(false);
   const [orderBranch, setOrderBranch] = useState<string | null>(null);
   const [menuBranchId, setMenuBranchId] = useState("hayathnagar");
+  const [liveReviews, setLiveReviews] = useState(TESTIMONIALS);
+
+  useEffect(() => {
+    fetch("/api/reviews")
+      .then(r => r.json())
+      .then(data => {
+        if (data.reviews?.length >= 3) {
+          const converted = data.reviews.map((r: { author: string; rating: number; text: string; time: string; branch: string }) => ({
+            stars: "★".repeat(Math.min(5, Math.max(1, r.rating))),
+            text: r.text,
+            author: r.author,
+            location: r.time || "Hyderabad",
+            branch: r.branch,
+          }));
+          setLiveReviews(converted);
+        }
+      })
+      .catch(() => { /* keep static fallback */ });
+  }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const go = (s: Screen) => () => setScreen(s);
@@ -358,7 +377,7 @@ export default function SangamHotels() {
           <div className="hero-wrap">
             <video ref={videoRef} autoPlay loop muted={muted} playsInline
               style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }}
-              poster={IMGS.heroFallback}>
+>
               <source src="/hero.mp4" type="video/mp4" />
             </video>
             <div style={{ position:"absolute", inset:0, background:"linear-gradient(100deg,rgba(20,10,8,.9) 0%,rgba(20,10,8,.6) 46%,rgba(20,10,8,.15) 100%)" }} />
@@ -432,7 +451,7 @@ export default function SangamHotels() {
           <div style={{ position:"relative", background:"#000", lineHeight:0 }}>
             <video autoPlay loop muted playsInline
               style={{ width:"100%", display:"block", maxHeight:600, objectFit:"cover" }}
-              poster="/malkapur-exterior-2.jpg">
+>
               <source src="/malkapur-showcase-web.mp4" type="video/mp4" />
             </video>
             {/* Bottom gradient for smooth transition to next section */}
@@ -645,7 +664,7 @@ export default function SangamHotels() {
               </div>
               {/* Second row of smaller tiles */}
               <div className="gallery-row2">
-                {[IMGS.peer1, "/malkapur-exterior-1.jpg", IMGS.malkapur3, "/banquet-buffet.jpg", IMGS.room3, IMGS.room4].map((src,i) => (
+                {[IMGS.peer1, IMGS.malkapur1, IMGS.malkapur3, "/banquet-buffet.jpg", IMGS.room3, IMGS.room4].map((src,i) => (
                   <div key={i} style={{ position:"relative", paddingTop:"100%", borderRadius:14, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
                     <Img src={src} alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
                   </div>
@@ -689,7 +708,7 @@ export default function SangamHotels() {
             {/* Marquee — rendered twice for seamless loop */}
             <div className="marquee-wrap">
               <div className="marquee-track">
-                {[...TESTIMONIALS, ...TESTIMONIALS].map((r, i) => (
+                {[...liveReviews, ...liveReviews].map((r, i) => (
                   <div key={i} style={{ flexShrink:0, width:380, background:"#2f1d16", border:"1px solid #4a382c", borderRadius:20, padding:"28px 30px" }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
                       <div style={{ color:"#e7cd8f", font:"600 18px/1 'DM Sans'" }}>★★★★★</div>
