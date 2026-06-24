@@ -287,6 +287,13 @@ export default function SangamHotels() {
   const [menuBranchId, setMenuBranchId] = useState("hayathnagar");
   const [liveReviews, setLiveReviews] = useState(TESTIMONIALS);
   const [igPosts, setIgPosts] = useState<Array<{ id: string; media_url: string; thumbnail_url?: string; permalink: string; caption?: string; media_type: string }>>([]);
+  type ChatMsg = { role: 'user' | 'assistant'; content: string };
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([
+    { role: 'assistant', content: 'Namaste! 🙏 I\'m Arjun from Sangam Hotels. I can help you with our menu, branches, catering, rooms or anything else. What can I do for you?' }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function loadReviews() {
@@ -325,6 +332,29 @@ export default function SangamHotels() {
   }, []);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  async function sendChat(text?: string) {
+    const msg = (text ?? chatInput).trim();
+    if (!msg || chatLoading) return;
+    const next: ChatMsg[] = [...chatMessages, { role: 'user', content: msg }];
+    setChatMessages(next);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })) }),
+      });
+      const data = await res.json();
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, something went wrong. Please call +91 90638 44021.' }]);
+    } finally {
+      setChatLoading(false);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+    }
+  }
 
   const go = (s: Screen) => () => setScreen(s);
 
@@ -1419,24 +1449,57 @@ export default function SangamHotels() {
             </div>
             <button onClick={() => setChatOpen(false)} style={{ background:"rgba(255,255,255,.12)", border:"none", color:"#fff", width:30, height:30, borderRadius:9, cursor:"pointer", font:"600 15px/1 'DM Sans'" }}>✕</button>
           </div>
-          <div style={{ padding:18, background:"#fbf6ec", display:"flex", flexDirection:"column", gap:11, maxHeight:300, overflowY:"auto" }}>
-            <div style={{ alignSelf:"flex-start", maxWidth:"85%", background:"#fff", border:"1px solid #ece2d2", borderRadius:"15px 15px 15px 5px", padding:"11px 14px", font:"400 13.5px/1.55 'DM Sans'", color:"#3a352e" }}>
-              Namaste! 🙏 I can help you order food, plan catering, find a branch or book a room. What would you like?
-            </div>
-            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              {[
-                { label:"🛒 Order food", s:"menu" as Screen },
-                { label:"🎉 Catering", s:"catering" as Screen },
-                { label:"📍 Branches", s:"branches" as Screen },
-                { label:"🏨 Rooms", s:"rooms" as Screen },
-              ].map(q => (
-                <span key={q.label} onClick={() => { setScreen(q.s); setChatOpen(false); }} style={{ cursor:"pointer", background:"#fff", border:"1px solid #d9bfa0", color:"#8a1f2b", borderRadius:18, padding:"9px 14px", font:"600 12px/1 'DM Sans'" }}>{q.label}</span>
+          {/* Messages */}
+          <div style={{ padding:"14px 14px 10px", background:"#fbf6ec", display:"flex", flexDirection:"column", gap:10, height:300, overflowY:"auto" }}>
+            {chatMessages.map((m, i) => (
+              <div key={i} style={{ display:"flex", justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth:"82%",
+                  background: m.role === 'user' ? "#8a1f2b" : "#fff",
+                  color: m.role === 'user' ? "#fff" : "#3a352e",
+                  border: m.role === 'user' ? "none" : "1px solid #ece2d2",
+                  borderRadius: m.role === 'user' ? "15px 15px 5px 15px" : "15px 15px 15px 5px",
+                  padding:"10px 14px",
+                  font:"400 13.5px/1.55 'DM Sans'",
+                  whiteSpace:"pre-wrap",
+                }}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {chatLoading && (
+              <div style={{ alignSelf:"flex-start", background:"#fff", border:"1px solid #ece2d2", borderRadius:"15px 15px 15px 5px", padding:"10px 16px", font:"400 13px/1 'DM Sans'", color:"#9b8c78" }}>
+                <span style={{ display:"inline-flex", gap:4 }}>
+                  <span className="animate-wfpulse" style={{ animationDelay:"0ms" }}>●</span>
+                  <span className="animate-wfpulse" style={{ animationDelay:"200ms" }}>●</span>
+                  <span className="animate-wfpulse" style={{ animationDelay:"400ms" }}>●</span>
+                </span>
+              </div>
+            )}
+            <div ref={chatBottomRef} />
+          </div>
+          {/* Quick chips */}
+          {chatMessages.length <= 1 && (
+            <div style={{ display:"flex", gap:7, flexWrap:"wrap", padding:"8px 14px 4px", background:"#fbf6ec", borderTop:"1px solid #ece2d2" }}>
+              {["🛒 Order food","🎉 Catering enquiry","📍 Find a branch","🏨 Book a room","🎂 Custom cake"].map(q => (
+                <span key={q} onClick={() => sendChat(q)} style={{ cursor:"pointer", background:"#fff", border:"1px solid #d9bfa0", color:"#8a1f2b", borderRadius:16, padding:"7px 12px", font:"600 11.5px/1 'DM Sans'" }}>{q}</span>
               ))}
             </div>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:9, padding:"14px 16px", borderTop:"1px solid #ece2d2", background:"#fff" }}>
-            <div style={{ flex:1, background:"#f3eee0", borderRadius:22, padding:"12px 16px", font:"500 13px/1 'DM Sans'", color:"#9b8c78" }}>Ask about menu, catering, rooms…</div>
-            <div style={{ width:38, height:38, borderRadius:"50%", background:"#8a1f2b", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", font:"700 15px/1 'DM Sans'", cursor:"pointer" }}>➤</div>
+          )}
+          {/* Input */}
+          <div style={{ display:"flex", alignItems:"center", gap:9, padding:"12px 14px", borderTop:"1px solid #ece2d2", background:"#fff" }}>
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
+              placeholder="Ask about menu, catering, rooms…"
+              style={{ flex:1, background:"#f3eee0", border:"none", outline:"none", borderRadius:22, padding:"11px 16px", font:"500 13px/1 'DM Sans'", color:"#2a201b" }}
+            />
+            <button
+              onClick={() => sendChat()}
+              disabled={chatLoading || !chatInput.trim()}
+              style={{ width:38, height:38, borderRadius:"50%", background: chatLoading ? "#c9a0a8" : "#8a1f2b", border:"none", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", font:"700 15px/1 'DM Sans'", cursor: chatLoading ? "default" : "pointer", flexShrink:0 }}
+            >➤</button>
           </div>
         </div>
       )}
