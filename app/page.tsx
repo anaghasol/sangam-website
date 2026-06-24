@@ -7,7 +7,7 @@ type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "c
 // ── Real images from sangamhotelshyderabad.com ──────────────────────────────
 const BASE = "https://www.sangamhotelshyderabad.com/wp-content/uploads";
 const IMGS = {
-  logo:         `${BASE}/2024/02/sangam-hotel-Hyderabad-Logo.png`,
+  logo:         "/logo.png",
   heroFallback: `${BASE}/2025/06/Magudam-6-1078x595.jpeg`,
 
   // ── Halls (full-size scaled) ───────────────────────────────────
