@@ -115,6 +115,27 @@ RULES FOR YOUR RESPONSES
 - End with a helpful nudge when relevant (e.g. "Want me to share the directions?" or "Shall I connect you with our catering team?")
 `
 
+const MODELS = ['llama-3.1-8b-instant', 'gemma2-9b-it', 'llama3-8b-8192']
+
+async function callGroq(groqKey: string, model: string, msgs: { role: string; content: string }[]) {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        // Groq requires conversation to start with user message
+        ...msgs.filter((m, i) => !(i === 0 && m.role === 'assistant')),
+      ],
+      max_tokens: 300,
+      temperature: 0.7,
+    }),
+    signal: AbortSignal.timeout(12000),
+  })
+  return res.json()
+}
+
 export async function POST(req: NextRequest) {
   const { messages } = await req.json()
 
@@ -123,29 +144,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reply: "Sorry, our chat is temporarily offline. Please call us at +91 90638 44021." })
   }
 
-  try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${groqKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          ...messages.slice(-10), // keep last 10 turns for context
-        ],
-        max_tokens: 300,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(12000),
-    })
+  const recentMsgs = (messages as { role: string; content: string }[]).slice(-10)
 
-    const data = await res.json()
-    const reply = data.choices?.[0]?.message?.content?.trim() || "I'm having trouble right now — please call +91 90638 44021 and we'll help you directly!"
-    return NextResponse.json({ reply })
-  } catch {
-    return NextResponse.json({ reply: "I'm stepping away for a moment — please call +91 90638 44021 and our team will assist you right away!" })
+  for (const model of MODELS) {
+    try {
+      const data = await callGroq(groqKey, model, recentMsgs)
+      if (data.error?.code === 'rate_limit_exceeded') continue // try next model
+      if (data.error) break
+      const reply = data.choices?.[0]?.message?.content?.trim()
+      if (reply) return NextResponse.json({ reply })
+    } catch {
+      continue
+    }
   }
+
+  return NextResponse.json({ reply: "I'm just stepping away for a moment — please call +91 90638 44021 and our team will help you right away!" })
 }
