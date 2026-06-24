@@ -286,6 +286,7 @@ export default function SangamHotels() {
   const [orderBranch, setOrderBranch] = useState<string | null>(null);
   const [menuBranchId, setMenuBranchId] = useState("hayathnagar");
   const [liveReviews, setLiveReviews] = useState(TESTIMONIALS);
+  const [igPosts, setIgPosts] = useState<Array<{ id: string; media_url: string; thumbnail_url?: string; permalink: string; caption?: string; media_type: string }>>([]);
 
   useEffect(() => {
     function loadReviews() {
@@ -315,6 +316,14 @@ export default function SangamHotels() {
     const timer = setInterval(loadReviews, 5 * 60 * 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    fetch("/api/instagram")
+      .then(r => r.json())
+      .then(data => { if (data.posts?.length) setIgPosts(data.posts); })
+      .catch(() => {});
+  }, []);
+
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const go = (s: Screen) => () => setScreen(s);
@@ -1292,6 +1301,48 @@ export default function SangamHotels() {
                 <textarea rows={4} placeholder="Your message…" style={{ background:"#fbf6ec", border:"1px solid #e9dcc8", borderRadius:12, padding:"14px 16px", font:"500 14px/1.5 'DM Sans'", color:"#2a201b", outline:"none", resize:"vertical" }} />
                 <button style={{ background:"#8a1f2b", color:"#fff", border:"none", borderRadius:26, padding:15, font:"600 15px/1 'DM Sans'", cursor:"pointer" }}>Send message</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── INSTAGRAM FEED ─────────────────────────────────────────── */}
+      {screen !== "order" && igPosts.length > 0 && (
+        <div style={{ background:"#fff", padding:"72px 40px 80px" }}>
+          <div style={{ maxWidth:1180, margin:"0 auto" }}>
+            <div style={{ textAlign:"center", marginBottom:40 }}>
+              <div style={{ font:"600 12px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#c79a3a", marginBottom:12 }}>Follow our story</div>
+              <h2 style={{ margin:"0 0 10px", font:"700 38px/1.05 'Playfair Display'", color:"#2a201b" }}>
+                <a href="https://www.instagram.com/sangamhotelpeerzadiguda/" target="_blank" rel="noopener noreferrer" style={{ color:"inherit", textDecoration:"none" }}>@sangamhotelpeerzadiguda</a>
+              </h2>
+              <p style={{ margin:0, font:"400 15px/1 'DM Sans'", color:"#9b8c78" }}>Our latest from Instagram</p>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:10 }}>
+              {igPosts.slice(0, 8).map(post => (
+                <a key={post.id} href={post.permalink} target="_blank" rel="noopener noreferrer"
+                  style={{ display:"block", position:"relative", aspectRatio:"1/1", overflow:"hidden", borderRadius:12, background:"#f4ede0" }}>
+                  <img
+                    src={post.media_type === "VIDEO" ? (post.thumbnail_url || post.media_url) : post.media_url}
+                    alt={post.caption?.slice(0, 60) || "Sangam Hotel"}
+                    style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", transition:"transform .4s ease" }}
+                    onMouseOver={e => (e.currentTarget.style.transform = "scale(1.06)")}
+                    onMouseOut={e => (e.currentTarget.style.transform = "scale(1)")}
+                  />
+                  {post.media_type === "VIDEO" && (
+                    <div style={{ position:"absolute", top:10, right:10, background:"rgba(0,0,0,.55)", borderRadius:6, padding:"3px 7px", font:"600 11px/1 'DM Sans'", color:"#fff" }}>▶</div>
+                  )}
+                  <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0)", transition:"background .3s ease", borderRadius:12 }}
+                    onMouseOver={e => (e.currentTarget.style.background = "rgba(0,0,0,.28)")}
+                    onMouseOut={e => (e.currentTarget.style.background = "rgba(0,0,0,0)")} />
+                </a>
+              ))}
+            </div>
+            <div style={{ textAlign:"center", marginTop:28 }}>
+              <a href="https://www.instagram.com/sangamhotelpeerzadiguda/" target="_blank" rel="noopener noreferrer"
+                style={{ display:"inline-flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#f9ce34,#ee2a7b,#6228d7)", color:"#fff", border:"none", borderRadius:28, padding:"13px 28px", font:"600 15px/1 'DM Sans'", textDecoration:"none", cursor:"pointer" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+                Follow on Instagram
+              </a>
             </div>
           </div>
         </div>
