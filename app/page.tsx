@@ -39,13 +39,14 @@ const IMGS = {
   room6:        "/gp-peerzadiguda-1.jpg",
 
   // ── Category strip ────────────────────────────────────────────
-  tiffins:      "/gp-hayathnagar-2.jpg",    // real Sangam puri bhaji plate
-  restaurant:   "/gp-peerzadiguda-6.jpg",   // Peerzadiguda restaurant
+  tiffins:      "/dosa.jpg",                // HD masala dosa with chutneys
+  restaurant:   "/gp-peerzadiguda-6.jpg",   // Peerzadiguda restaurant interior
   bakery:       "/gp-bakes-hayt-0.jpg",     // real Sangam Bakes & Cakes counter
 
   // ── Food ──────────────────────────────────────────────────────
-  biryani:      "/gp-hayathnagar-3.jpg",    // chicken rice on banana leaf
-  biryaniReal:  "/gp-hayathnagar-3.jpg",
+  biryani:      "/biryani-hyd.jpg",         // HD Hyderabadi biryani
+  biryaniReal:  "/biryani-hyd.jpg",         // HD Hyderabadi biryani
+  vegMeals:     "/veg-thali.jpg",           // HD Indian veg meals spread
 
   // ── Menu pages ────────────────────────────────────────────────
   menuPage1:    "/gp-peerzadiguda-6.jpg",
@@ -563,7 +564,7 @@ export default function SangamHotels() {
               {[
                 { img:IMGS.tiffins,    label:"South Indian Tiffins", desc:"Idli, vada, dosa with fresh sambar & chutneys", veg:true,  price:"₹70",  bestseller:true },
                 { img:IMGS.biryaniReal,label:"Hyderabadi Biryani",  desc:"Slow-cooked dum biryani, fragrant whole spices", veg:false, price:"₹240" },
-                { img:IMGS.restaurant, label:"Veg Meals",            desc:"Rice, dal, 3 curries, papad & pickle", veg:true,  price:"₹149" },
+                { img:IMGS.vegMeals,   label:"Veg Meals",            desc:"Rice, dal, 3 curries, papad & pickle", veg:true,  price:"₹149" },
                 { img:IMGS.bakery,     label:"Bakes & Cakes",        desc:"Freshly baked pastries, cakes & brownies daily", veg:true,  price:"₹90" },
               ].map(dish => (
                 <div key={dish.label} style={{ background:"#fbf6ec", border:"1px solid #ece2d2", borderRadius:18, overflow:"hidden", boxShadow:"0 10px 28px rgba(60,40,20,.06)" }}>
@@ -699,7 +700,7 @@ export default function SangamHotels() {
                 {/* Big left tile spans 2 rows */}
                 <div className="gallery-big" style={{ position:"relative", borderRadius:18, overflow:"hidden", background:"linear-gradient(135deg,#caa24a,#7a3018)" }}>
                   <Img src={IMGS.magudamWide} alt="Magudam Hall" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover" }} />
-                  <div style={{ position:"absolute", bottom:18, left:18, font:"600 14px/1 'DM Sans'", color:"#fff", background:"rgba(0,0,0,.5)", backdropFilter:"blur(4px)", padding:"8px 14px", borderRadius:20 }}>Magudam · Hayathnagar</div>
+                  <div style={{ position:"absolute", bottom:18, left:18, font:"600 14px/1 'DM Sans'", color:"#fff", background:"rgba(0,0,0,.5)", backdropFilter:"blur(4px)", padding:"8px 14px", borderRadius:20 }}>Magudam · Peerzadiguda</div>
                 </div>
                 {[
                   { src:IMGS.peerzHall, label:"Peerzadiguda Hall" },
