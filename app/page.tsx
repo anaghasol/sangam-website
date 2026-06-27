@@ -4,62 +4,61 @@ import { useState, useRef, useEffect } from "react";
 
 type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "contact" | "order";
 
-// ── Real images from sangamhotelshyderabad.com ──────────────────────────────
-const BASE = "https://www.sangamhotelshyderabad.com/wp-content/uploads";
+// ── All images served locally from /public/ ──────────────────────────────────
 const IMGS = {
   logo:         "/logo.png",
-  heroFallback: `${BASE}/2025/06/Magudam-6-1078x595.jpeg`,
+  heroFallback: "/hall-magudam.jpg",
 
-  // ── Halls (full-size scaled) ───────────────────────────────────
-  arangam:      `${BASE}/2025/06/Arangam-7-scaled.jpeg`,
-  magudam:      `${BASE}/2025/06/Magudam-7-scaled.jpeg`,
-  magudamWide:  `${BASE}/2025/06/Magudam-6-1078x595.jpeg`,
+  // ── Halls ─────────────────────────────────────────────────────
+  arangam:      "/hall-arangam.jpg",
+  magudam:      "/hall-magudam.jpg",
+  magudamWide:  "/hall-magudam.jpg",
 
-  // ── Peerzadiguda (full-size) ──────────────────────────────────
-  peerzHall:    `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-3.35.18-PM-scaled.jpeg`,
-  peer1:        `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.19.24-PM-1-scaled.jpeg`,
-  peer2:        `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.19.24-PM-scaled.jpeg`,
-  peer3:        `${BASE}/2025/06/WhatsApp-Image-2025-06-20-at-4.18.51-PM-2-scaled.jpeg`,
+  // ── Peerzadiguda ──────────────────────────────────────────────
+  peerzHall:    "/peerzHall.jpg",
+  peer1:        "/peer1.jpg",
+  peer2:        "/peer1.jpg",
+  peer3:        "/peerzHall.jpg",
 
-  // ── Hayathnagar / Malkapur (full-size) ────────────────────────
-  hayt1:        `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.22.51-PM.jpeg`,
-  hayt2:        `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.22.50-PM.jpeg`,
-  malkapur1:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.59-PM-1.jpeg`,
-  malkapur2:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.59-PM.jpeg`,
-  malkapur3:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.58-PM.jpeg`,
-  malkapur4:    `${BASE}/2025/06/WhatsApp-Image-2025-06-19-at-5.19.57-PM.jpeg`,
+  // ── Hayathnagar / Malkapur ────────────────────────────────────
+  hayt1:        "/hayt1.jpg",
+  hayt2:        "/hayt1.jpg",
+  malkapur1:    "/malkapur1.jpg",
+  malkapur2:    "/malkapur2.jpg",
+  malkapur3:    "/malkapur1.jpg",
+  malkapur4:    "/malkapur2.jpg",
 
-  // ── Room photos (all 4 available) ─────────────────────────────
-  room1:        `${BASE}/2025/06/WhatsApp-Image-2025-06-05-at-11.28.55_aba4a869-1078x595.jpg`,
-  room2:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.08_16d06d48-768x578.jpg`,
-  room3:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.07_ad49de3c-768x576.jpg`,
-  room4:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.06_b9e73879-768x576.jpg`,
-  room5:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.05_37293c98-1078x595.jpg`,
-  room6:        `${BASE}/2024/02/WhatsApp-Image-2025-06-05-at-11.29.04_a635c195-scaled.jpg`,
+  // ── Rooms ─────────────────────────────────────────────────────
+  room1:        "/room1.jpg",
+  room2:        "/room2.jpg",
+  room3:        "/room3.jpg",
+  room4:        "/room1.jpg",
+  room5:        "/room2.jpg",
+  room6:        "/room3.jpg",
 
-  // ── Category strip photos (exact images from current site) ────
-  tiffins:      `${BASE}/2025/06/tiffins.png`,
-  restaurant:   `${BASE}/2025/06/restaurants.png`,
-  bakery:       `${BASE}/2025/06/Bakery-Items-1.png`,
+  // ── Category strip ────────────────────────────────────────────
+  tiffins:      "/tiffins.jpg",
+  restaurant:   "/restaurant.jpg",
+  bakery:       "/bakery.jpg",
 
   // ── Food / biryani ────────────────────────────────────────────
-  biryani:      `${BASE}/2024/02/Biryani-Mughlai.jpg`,
-  biryaniReal:  `${BASE}/2025/11/Discover-the-Best-Mutton-Biryani-in-Hyderabad-at-Sangam-Hotel-Hyderabad.jpg`,
+  biryani:      "/biryani.jpg",
+  biryaniReal:  "/biryani.jpg",
 
-  // ── Menu card scans ───────────────────────────────────────────
-  menuPage1:    `${BASE}/2025/06/SANGAM-MANSOORABAD-MENU-1_page-0001-scaled.jpg`,
-  menuPage2:    `${BASE}/2025/06/SANGAM-MANSOORABAD-MENU-1_page-0002-scaled.jpg`,
+  // ── Menu card scans (placeholder until user provides) ─────────
+  menuPage1:    "/restaurant.jpg",
+  menuPage2:    "/restaurant.jpg",
 
-  // ── Editorial / blog ──────────────────────────────────────────
-  hotelHero:    `${BASE}/2025/08/Sangam-Hotel-Hyderabad-–-Redefining-Hospitality-Taste-and-Celebrations-1078x595.jpg`,
-  peerzExt:     `${BASE}/2025/09/Sangam-Hotel-By-Sameeksha-Hospitality-1078x595.jpg`,
+  // ── Editorial ─────────────────────────────────────────────────
+  hotelHero:    "/hotel-hero.jpg",
+  peerzExt:     "/peerzext.jpg",
   peerzBldg:    "/peerzadiguda.webp",
   haythBldg:    "/hayathnagar.webp",
   koyya:        "/koyyalagudem.webp",
   bakesMans:    "/bakes-mansoorabad.webp",
   tiffinsMans:  "/tiffins-mansoorabad.webp",
   bakesHayt:    "/bakes-hayathnagar.webp",
-  newBranch:    `${BASE}/2025/07/WhatsApp-Image-2025-07-07-at-15.12.37_d297b49e.jpg`,
+  newBranch:    "/malkapur1.jpg",
 };
 
 const BRANCHES = [
