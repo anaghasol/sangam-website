@@ -7,58 +7,60 @@ type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "c
 // ── All images served locally from /public/ ──────────────────────────────────
 const IMGS = {
   logo:         "/logo.png",
-  heroFallback: "/hall-magudam.jpg",
+  heroFallback: "/gp-peerzadiguda-0.jpg",   // real Sangam Hotel Peerzadiguda building
 
-  // ── Halls ─────────────────────────────────────────────────────
-  arangam:      "/hall-arangam.jpg",
-  magudam:      "/hall-magudam.jpg",
-  magudamWide:  "/hall-magudam.jpg",
+  // ── Halls (real Sangam banquet halls) ─────────────────────────
+  arangam:      "/gp-peerzadiguda-2.jpg",   // crystal chandelier hall
+  magudam:      "/gp-peerzadiguda-4.jpg",   // buffet hall with red drapes
+  magudamWide:  "/gp-peerzadiguda-4.jpg",
 
-  // ── Peerzadiguda ──────────────────────────────────────────────
-  peerzHall:    "/peerzHall.jpg",
-  peer1:        "/peer1.jpg",
-  peer2:        "/peer1.jpg",
-  peer3:        "/peerzHall.jpg",
+  // ── Peerzadiguda interiors ────────────────────────────────────
+  peerzHall:    "/gp-peerzadiguda-6.jpg",   // restaurant with green sofas & juice bar
+  peer1:        "/gp-peerzadiguda-0.jpg",   // building exterior
+  peer2:        "/gp-peerzadiguda-5.jpg",   // Ganesha lobby
+  peer3:        "/gp-peerzadiguda-8.jpg",   // luxury blue sofa lounge
 
-  // ── Hayathnagar / Malkapur ────────────────────────────────────
-  hayt1:        "/hayt1.jpg",
-  hayt2:        "/hayt1.jpg",
-  malkapur1:    "/malkapur1.jpg",
-  malkapur2:    "/malkapur2.jpg",
-  malkapur3:    "/malkapur1.jpg",
-  malkapur4:    "/malkapur2.jpg",
+  // ── Hayathnagar ───────────────────────────────────────────────
+  hayt1:        "/gp-hayathnagar-4.jpg",    // Hayathnagar welcome counter
+  hayt2:        "/gp-hayathnagar-1.jpg",    // official Sangam Hotel branded image
 
-  // ── Rooms ─────────────────────────────────────────────────────
-  room1:        "/room1.jpg",
-  room2:        "/room2.jpg",
-  room3:        "/room3.jpg",
-  room4:        "/room1.jpg",
-  room5:        "/room2.jpg",
-  room6:        "/room3.jpg",
+  // ── Malkapur ──────────────────────────────────────────────────
+  malkapur1:    "/gp-malkapur-2.jpg",       // JIO BP Plaza dining hall (wide)
+  malkapur2:    "/gp-malkapur-3.jpg",       // JIO BP Plaza dining hall with Sangam signage
+  malkapur3:    "/gp-malkapur-4.jpg",
+  malkapur4:    "/gp-malkapur-5.jpg",
+
+  // ── Rooms (real Sangam hotel rooms) ───────────────────────────
+  room1:        "/gp-peerzadiguda-1.jpg",   // actual Sangam king room
+  room2:        "/gp-peerzadiguda-1.jpg",
+  room3:        "/gp-peerzadiguda-7.jpg",   // lobby sitting area
+  room4:        "/gp-peerzadiguda-9.jpg",   // floor lounge near rooms
+  room5:        "/gp-peerzadiguda-8.jpg",   // luxury lounge
+  room6:        "/gp-peerzadiguda-1.jpg",
 
   // ── Category strip ────────────────────────────────────────────
-  tiffins:      "/tiffins.jpg",
-  restaurant:   "/restaurant.jpg",
-  bakery:       "/bakery.jpg",
+  tiffins:      "/gp-hayathnagar-2.jpg",    // real Sangam puri bhaji plate
+  restaurant:   "/gp-peerzadiguda-6.jpg",   // Peerzadiguda restaurant
+  bakery:       "/gp-bakes-hayt-0.jpg",     // real Sangam Bakes & Cakes counter
 
-  // ── Food / biryani ────────────────────────────────────────────
-  biryani:      "/biryani.jpg",
-  biryaniReal:  "/biryani.jpg",
+  // ── Food ──────────────────────────────────────────────────────
+  biryani:      "/gp-hayathnagar-3.jpg",    // chicken rice on banana leaf
+  biryaniReal:  "/gp-hayathnagar-3.jpg",
 
-  // ── Menu card scans (placeholder until user provides) ─────────
-  menuPage1:    "/restaurant.jpg",
-  menuPage2:    "/restaurant.jpg",
+  // ── Menu pages ────────────────────────────────────────────────
+  menuPage1:    "/gp-peerzadiguda-6.jpg",
+  menuPage2:    "/gp-hayathnagar-1.jpg",    // Sangam branded food image
 
-  // ── Editorial ─────────────────────────────────────────────────
-  hotelHero:    "/hotel-hero.jpg",
-  peerzExt:     "/peerzext.jpg",
+  // ── Editorial / branch cards ──────────────────────────────────
+  hotelHero:    "/gp-peerzadiguda-0.jpg",   // building exterior
+  peerzExt:     "/gp-peerzadiguda-0.jpg",
   peerzBldg:    "/peerzadiguda.webp",
   haythBldg:    "/hayathnagar.webp",
   koyya:        "/koyyalagudem.webp",
   bakesMans:    "/bakes-mansoorabad.webp",
   tiffinsMans:  "/tiffins-mansoorabad.webp",
   bakesHayt:    "/bakes-hayathnagar.webp",
-  newBranch:    "/malkapur1.jpg",
+  newBranch:    "/gp-malkapur-2.jpg",       // Malkapur JIO BP Plaza interior
 };
 
 const BRANCHES = [
