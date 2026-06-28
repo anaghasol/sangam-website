@@ -764,7 +764,7 @@ export default function SangamHotels() {
                   { src:"/testimonial-2.mp4", label:"Guest experience at Sangam Hotels" },
                 ].map((v, i) => (
                   <div key={i} style={{
-                    flex:"1 1 440px", maxWidth:560, minWidth:280,
+                    flex:"1 1 300px", maxWidth:400, minWidth:260,
                     borderRadius:20, overflow:"hidden",
                     boxShadow:"0 12px 40px rgba(60,40,20,.12)",
                     background:"#1a0e08",
@@ -775,7 +775,7 @@ export default function SangamHotels() {
                       controls
                       playsInline
                       preload="metadata"
-                      style={{ width:"100%", display:"block", aspectRatio:"9/16", objectFit:"cover", maxHeight:640 }}
+                      style={{ width:"100%", display:"block" }}
                     />
                     <div style={{ padding:"14px 18px", background:"#1a0e08" }}>
                       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1278,7 +1278,7 @@ export default function SangamHotels() {
                   { src:"/testimonial-2.mp4" },
                 ].map((v, i) => (
                   <div key={i} style={{
-                    flex:"1 1 440px", maxWidth:560, minWidth:280,
+                    flex:"1 1 300px", maxWidth:400, minWidth:260,
                     borderRadius:20, overflow:"hidden",
                     boxShadow:"0 10px 32px rgba(60,40,20,.10)",
                     background:"#1a0e08",
@@ -1288,7 +1288,7 @@ export default function SangamHotels() {
                       controls
                       playsInline
                       preload="metadata"
-                      style={{ width:"100%", display:"block", aspectRatio:"9/16", objectFit:"cover", maxHeight:620 }}
+                      style={{ width:"100%", display:"block" }}
                     />
                     <div style={{ padding:"12px 16px", background:"#1a0e08", display:"flex", alignItems:"center", gap:10 }}>
                       <div style={{ width:32, height:32, borderRadius:"50%", background:"linear-gradient(135deg,#e7cd8f,#c8a84b)", display:"flex", alignItems:"center", justifyContent:"center", font:"700 12px 'DM Sans'", color:"#241510", flexShrink:0 }}>★</div>
