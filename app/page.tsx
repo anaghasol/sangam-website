@@ -750,6 +750,48 @@ export default function SangamHotels() {
             </div>
           </div>
 
+          {/* CUSTOMER VIDEO TESTIMONIALS */}
+          <div style={{ padding:"72px 24px 80px", background:"#fff" }}>
+            <div style={{ maxWidth:1100, margin:"0 auto" }}>
+              <div style={{ textAlign:"center", marginBottom:48 }}>
+                <div style={{ font:"600 11px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#b88a2e", marginBottom:10 }}>Real Guest Stories</div>
+                <h2 style={{ margin:"0 0 10px", font:"700 40px/1.05 'Playfair Display'", color:"#2a201b" }}>Hear from our customers</h2>
+                <p style={{ font:"400 16px/1.6 'DM Sans'", color:"#7a6e62", margin:0 }}>Real people sharing real experiences at Sangam Hotels</p>
+              </div>
+              <div style={{ display:"flex", gap:28, flexWrap:"wrap", justifyContent:"center" }}>
+                {[
+                  { src:"/testimonial-1.mp4", label:"Guest experience at Sangam Hotels" },
+                  { src:"/testimonial-2.mp4", label:"Guest experience at Sangam Hotels" },
+                ].map((v, i) => (
+                  <div key={i} style={{
+                    flex:"1 1 440px", maxWidth:560, minWidth:280,
+                    borderRadius:20, overflow:"hidden",
+                    boxShadow:"0 12px 40px rgba(60,40,20,.12)",
+                    background:"#1a0e08",
+                    position:"relative",
+                  }}>
+                    <video
+                      src={v.src}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      style={{ width:"100%", display:"block", aspectRatio:"9/16", objectFit:"cover", maxHeight:640 }}
+                    />
+                    <div style={{ padding:"14px 18px", background:"#1a0e08" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <div style={{ width:36, height:36, borderRadius:"50%", background:"linear-gradient(135deg,#e7cd8f,#c8a84b)", display:"flex", alignItems:"center", justifyContent:"center", font:"700 14px 'DM Sans'", color:"#241510", flexShrink:0 }}>★</div>
+                        <div>
+                          <div style={{ font:"600 13px/1.2 'DM Sans'", color:"#fff" }}>Verified Guest</div>
+                          <div style={{ font:"400 12px/1 'DM Sans'", color:"#9b8c78", marginTop:3 }}>Sangam Hotels Hyderabad · ⭐⭐⭐⭐⭐</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* TESTIMONIALS — infinite auto-scroll */}
           <div style={{ padding:"72px 0 80px", background:"#241510" }}>
             <div style={{ textAlign:"center", marginBottom:48, padding:"0 40px" }}>
@@ -1216,6 +1258,45 @@ export default function SangamHotels() {
                     <div style={{ fontSize:30, marginBottom:14 }}>{v.icon}</div>
                     <div style={{ margin:"0 0 10px", font:"700 20px/1.1 'Playfair Display'", color:"#fff" }}>{v.title}</div>
                     <p style={{ margin:0, font:"400 14px/1.7 'DM Sans'", color:"#cbbfae" }}>{v.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Customer video testimonials — About page */}
+          <div style={{ padding:"64px 24px 72px", background:"#fbf6ec" }}>
+            <div style={{ maxWidth:1100, margin:"0 auto" }}>
+              <div style={{ textAlign:"center", marginBottom:44 }}>
+                <div style={{ font:"600 11px/1 'DM Sans'", letterSpacing:".28em", textTransform:"uppercase", color:"#b88a2e", marginBottom:10 }}>Real Guest Stories</div>
+                <h2 style={{ margin:"0 0 10px", font:"700 38px/1.05 'Playfair Display'", color:"#2a201b" }}>Hear from our customers</h2>
+                <p style={{ font:"400 15px/1.6 'DM Sans'", color:"#7a6e62", margin:0 }}>Real people sharing real experiences at Sangam Hotels</p>
+              </div>
+              <div style={{ display:"flex", gap:28, flexWrap:"wrap", justifyContent:"center" }}>
+                {[
+                  { src:"/testimonial-1.mp4" },
+                  { src:"/testimonial-2.mp4" },
+                ].map((v, i) => (
+                  <div key={i} style={{
+                    flex:"1 1 440px", maxWidth:560, minWidth:280,
+                    borderRadius:20, overflow:"hidden",
+                    boxShadow:"0 10px 32px rgba(60,40,20,.10)",
+                    background:"#1a0e08",
+                  }}>
+                    <video
+                      src={v.src}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      style={{ width:"100%", display:"block", aspectRatio:"9/16", objectFit:"cover", maxHeight:620 }}
+                    />
+                    <div style={{ padding:"12px 16px", background:"#1a0e08", display:"flex", alignItems:"center", gap:10 }}>
+                      <div style={{ width:32, height:32, borderRadius:"50%", background:"linear-gradient(135deg,#e7cd8f,#c8a84b)", display:"flex", alignItems:"center", justifyContent:"center", font:"700 12px 'DM Sans'", color:"#241510", flexShrink:0 }}>★</div>
+                      <div>
+                        <div style={{ font:"600 12px/1.2 'DM Sans'", color:"#fff" }}>Verified Guest</div>
+                        <div style={{ font:"400 11px/1 'DM Sans'", color:"#9b8c78", marginTop:2 }}>Sangam Hotels · ⭐⭐⭐⭐⭐</div>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
