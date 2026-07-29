@@ -115,12 +115,18 @@ RULES FOR YOUR RESPONSES
 - End with a helpful nudge when relevant (e.g. "Want me to share the directions?" or "Shall I connect you with our catering team?")
 `
 
-// Active Groq models as of 2026-06 (decommissioned ones removed)
+// Every free Groq chat-capable model, verified live against console.groq.com/docs/models
+// and test-called individually on 2026-07-29. Order = quality/reliability, tried in sequence
+// until one responds. (Excludes whisper/orpheus [audio], prompt-guard [classifier],
+// gpt-oss-safeguard [moderation], minimax-m2.7 [no access on this key].)
 const MODELS = [
-  'llama-3.3-70b-versatile',            // primary — best quality
-  'meta-llama/llama-4-scout-17b-16e-instruct', // newer Llama 4, fast
-  'qwen/qwen3-32b',                      // 32B fallback
-  'llama-3.1-8b-instant',               // fast last-resort
+  'llama-3.3-70b-versatile', // primary — best quality, production
+  'openai/gpt-oss-120b',     // large, production
+  'openai/gpt-oss-20b',      // mid-size, production
+  'llama-3.1-8b-instant',    // fast, production
+  'groq/compound',           // agentic system, production
+  'groq/compound-mini',      // agentic system (lighter), production
+  'qwen/qwen3.6-27b',        // reasoning model, preview — last resort
 ]
 
 async function callGroq(groqKey: string, model: string, msgs: { role: string; content: string }[]) {
@@ -136,6 +142,8 @@ async function callGroq(groqKey: string, model: string, msgs: { role: string; co
       ],
       max_tokens: 300,
       temperature: 0.7,
+      // only qwen3.6 accepts this param; other models 400 on it
+      ...(model.startsWith('qwen/') ? { reasoning_format: 'hidden' } : {}),
     }),
     signal: AbortSignal.timeout(12000),
   })
@@ -155,10 +163,14 @@ export async function POST(req: NextRequest) {
   for (const model of MODELS) {
     try {
       const data = await callGroq(groqKey, model, recentMsgs)
-      if (data.error) { continue } // any error (rate limit, decommissioned, etc) → try next
+      if (data.error) {
+        console.error(`[chat] Groq model ${model} failed:`, data.error.code || data.error.message)
+        continue // any error (rate limit, decommissioned, etc) → try next
+      }
       const reply = data.choices?.[0]?.message?.content?.trim()
       if (reply) return NextResponse.json({ reply })
-    } catch {
+    } catch (err) {
+      console.error(`[chat] Groq model ${model} threw:`, err)
       continue
     }
   }
