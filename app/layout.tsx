@@ -33,7 +33,11 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${playfair.variable} ${dmSans.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="https://restros.ai/sitara/sangam-tracker.js" async />
+      </body>
     </html>
   );
 }
