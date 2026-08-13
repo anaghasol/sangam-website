@@ -123,7 +123,7 @@ const MODELS = [
   'llama-3.3-70b-versatile', // primary — best quality, production
   'openai/gpt-oss-120b',     // large, production
   'openai/gpt-oss-20b',      // mid-size, production
-  'llama-3.1-8b-instant',    // fast, production
+  'allam-2-7b',            // lightweight fallback (was llama-3.1-8b, decommissioned 2026-08-16)
   'groq/compound',           // agentic system, production
   'groq/compound-mini',      // agentic system (lighter), production
   'qwen/qwen3.6-27b',        // reasoning model, preview — last resort
