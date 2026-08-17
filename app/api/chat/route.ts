@@ -120,7 +120,6 @@ RULES FOR YOUR RESPONSES
 // until one responds. (Excludes whisper/orpheus [audio], prompt-guard [classifier],
 // gpt-oss-safeguard [moderation], minimax-m2.7 [no access on this key].)
 const MODELS = [
-  'llama-3.3-70b-versatile', // primary — best quality, production
   'openai/gpt-oss-120b',     // large, production
   'openai/gpt-oss-20b',      // mid-size, production
   'allam-2-7b',            // lightweight fallback (was llama-3.1-8b, decommissioned 2026-08-16)
