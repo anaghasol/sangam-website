@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSangamSalesContext } from '@/lib/sangam-sales'
+import { askFreeModels } from '@/lib/free-ai'
 
 const SYSTEM_PROMPT = `You are Arjun, the friendly hospitality manager at Sangam Hotels Hyderabad. You work at the front desk and respond like a warm, knowledgeable human — not a robot. Be concise (2-4 sentences max unless listing items), use natural conversational language, and speak with pride about the brand.
 
@@ -128,18 +130,18 @@ const MODELS = [
   'qwen/qwen3.6-27b',        // reasoning model, preview — last resort
 ]
 
-async function callGroq(groqKey: string, model: string, msgs: { role: string; content: string }[]) {
+async function callGroq(groqKey: string, model: string, msgs: { role: string; content: string }[], systemPrompt: string) {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         // Groq requires conversation to start with user message
         ...msgs.filter((m, i) => !(i === 0 && m.role === 'assistant')),
       ],
-      max_tokens: 300,
+      max_tokens: 500,
       temperature: 0.7,
       // only qwen3.6 accepts this param; other models 400 on it
       ...(model.startsWith('qwen/') ? { reasoning_format: 'hidden' } : {}),
@@ -159,20 +161,21 @@ export async function POST(req: NextRequest) {
 
   const recentMsgs = (messages as { role: string; content: string }[]).slice(-10)
 
-  for (const model of MODELS) {
-    try {
-      const data = await callGroq(groqKey, model, recentMsgs)
-      if (data.error) {
-        console.error(`[chat] Groq model ${model} failed:`, data.error.code || data.error.message)
-        continue // any error (rate limit, decommissioned, etc) → try next
-      }
-      const reply = data.choices?.[0]?.message?.content?.trim()
-      if (reply) return NextResponse.json({ reply })
-    } catch (err) {
-      console.error(`[chat] Groq model ${model} threw:`, err)
-      continue
-    }
-  }
+  // Real PetPooja sales appended to the persona. Without this the chat answers
+  // "what's good here?" from nothing at all and simply invents dishes — it had
+  // no database access of any kind. Returns '' if unavailable, in which case the
+  // prompt is exactly what it was before: general hospitality answers, never
+  // fabricated popularity.
+  const sales = await getSangamSalesContext()
+  const systemPrompt = sales ? `${SYSTEM_PROMPT}\n\n${sales}` : SYSTEM_PROMPT
+
+  // Every free provider, not just Groq. Groq's free tier rate-limits after a
+  // handful of quick messages — measured: seven test questions in a row and the
+  // last two exhausted all six Groq models with rate_limit_exceeded, so the
+  // guest got the "stepping away" fallback while the data sat right there. The
+  // other providers make one provider's limit invisible instead of fatal.
+  const reply = await askFreeModels(systemPrompt, recentMsgs)
+  if (reply) return NextResponse.json({ reply })
 
   return NextResponse.json({ reply: "I'm just stepping away for a moment — please call +91 90638 44021 and our team will help you right away!" })
 }
