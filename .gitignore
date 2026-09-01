@@ -45,3 +45,6 @@ public/malkapur-showcase.mp4
 public/jiobp-logo.png
 "Sangam Hotel Peerzadiguda.mp4"
 .env.local
+
+# PetPooja raw exports — 15MB/month, re-downloadable from S3
+scripts/petpooja-exports/
