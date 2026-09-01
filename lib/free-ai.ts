@@ -21,7 +21,8 @@ export type Msg = { role: string; content: string }
 
 type Provider = {
   name: string
-  key: () => string | undefined
+  /** Every key to try, in order. A dead key is skipped, not fatal. */
+  keys: () => (string | undefined)[]
   models: string[]
   call: (key: string, model: string, system: string, msgs: Msg[]) => Promise<string | null>
 }
@@ -57,32 +58,35 @@ async function openaiStyle(
 const PROVIDERS: Provider[] = [
   {
     name: 'groq',
-    key: () => process.env.GROQ_API_KEY,
+    keys: () => [process.env.GROQ_API_KEY],
     models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'groq/compound', 'groq/compound-mini', 'allam-2-7b'],
     call: (k, m, s, msgs) => openaiStyle('https://api.groq.com/openai/v1/chat/completions', k, m, s, msgs),
   },
   {
     name: 'cerebras',
-    key: () => process.env.CEREBRAS_API_KEY,
+    keys: () => [process.env.CEREBRAS_API_KEY],
     models: ['gpt-oss-120b', 'llama-3.3-70b'],
     call: (k, m, s, msgs) => openaiStyle('https://api.cerebras.ai/v1/chat/completions', k, m, s, msgs),
   },
   {
     name: 'mistral',
-    key: () => process.env.MISTRAL_API_KEY,
+    keys: () => [process.env.MISTRAL_API_KEY],
     models: ['mistral-small-latest'],
     call: (k, m, s, msgs) => openaiStyle('https://api.mistral.ai/v1/chat/completions', k, m, s, msgs),
   },
   {
     name: 'openrouter',
-    key: () => process.env.OPENROUTER_API_KEY,
+    // Two keys: the original returns 402 (out of credits) as of 2026-08-31, so
+    // the newer one is tried first. Credit is per-key, not per-account, and a
+    // spent key fails every call — worth stepping past rather than stopping on.
+    keys: () => [process.env.OPENROUTER_API_KEY_2, process.env.OPENROUTER_API_KEY],
     // ":free" variants only — these cost nothing on OpenRouter.
     models: ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-2-9b-it:free'],
     call: (k, m, s, msgs) => openaiStyle('https://openrouter.ai/api/v1/chat/completions', k, m, s, msgs),
   },
   {
     name: 'gemini',
-    key: () => process.env.GEMINI_API_KEY,
+    keys: () => [process.env.GEMINI_API_KEY],
     models: ['gemini-2.0-flash'],
     // Gemini has its own request shape: the system prompt is a separate field
     // and turns are "parts", not "content".
@@ -116,17 +120,18 @@ const PROVIDERS: Provider[] = [
 /** First free model that answers, or null when every provider is exhausted. */
 export async function askFreeModels(system: string, msgs: Msg[]): Promise<string | null> {
   for (const p of PROVIDERS) {
-    const key = p.key()
-    if (!key) continue
-    for (const model of p.models) {
-      try {
-        const reply = await p.call(key, model, system, msgs)
-        if (reply) {
-          console.log(`[chat] answered by ${p.name}/${model}`)
-          return reply
+    for (const key of p.keys()) {
+      if (!key) continue
+      for (const model of p.models) {
+        try {
+          const reply = await p.call(key, model, system, msgs)
+          if (reply) {
+            console.log(`[chat] answered by ${p.name}/${model}`)
+            return reply
+          }
+        } catch (err) {
+          console.error(`[chat] ${p.name}/${model} threw:`, (err as Error)?.message)
         }
-      } catch (err) {
-        console.error(`[chat] ${p.name}/${model} threw:`, (err as Error)?.message)
       }
     }
   }
