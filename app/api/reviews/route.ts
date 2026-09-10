@@ -45,10 +45,11 @@ interface GReview {
 }
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  const schema = process.env.NEXT_PUBLIC_SUPABASE_SCHEMA || process.env.VITE_SUPABASE_SCHEMA || process.env.SUPABASE_SCHEMA
   if (!url || !key) return null
-  return createClient(url, key)
+  return createClient(url, key, schema ? { db: { schema } } : undefined)
 }
 
 async function fetchFromGoogle(placeId: string, sort: 'newest' | 'most_relevant', key: string): Promise<GReview[]> {

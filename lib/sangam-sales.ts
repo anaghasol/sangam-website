@@ -33,10 +33,11 @@ let cache: { text: string; at: number } | null = null
 const TTL_MS = 60 * 60 * 1000 // the underlying data moves once a day at most
 
 function sb() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  const schema = process.env.NEXT_PUBLIC_SUPABASE_SCHEMA || process.env.VITE_SUPABASE_SCHEMA || process.env.SUPABASE_SCHEMA
   if (!url || !key) return null
-  return createClient(url, key)
+  return createClient(url, key, schema ? { db: { schema } } : undefined)
 }
 
 const money = (n: number | null) => (n && n > 0 ? `₹${Math.round(n)}` : '')
@@ -55,6 +56,15 @@ function top(rows: Row[], pick: (r: Row) => boolean, n: number): string {
     .slice(0, n)
     .map(([name, v]) => `${name}${money(v.price) ? ' ' + money(v.price) : ''}`)
     .join(', ')
+}
+
+const isVeg = (r: Row): boolean => {
+  const cat = (r.category || '').toLowerCase()
+  const name = (r.display_name || '').toLowerCase()
+  const nonVegKeywords = ['chicken', 'mutton', 'egg', 'fish', 'prawn', 'non veg', 'non-veg', 'keema', 'kabab', 'biryanis']
+  if (nonVegKeywords.some(k => cat.includes(k))) return false
+  if (nonVegKeywords.some(k => name.includes(k))) return false
+  return true
 }
 
 /**
@@ -78,37 +88,31 @@ export async function getSangamSalesContext(): Promise<string> {
     if (error || !data?.length) return ''
 
     // Water, tea and biscuits outsell every dish because they accompany other
-    // orders — ranked together they crowd the food out entirely, and the first
-    // draft of this recommended "Sangam Water Bottle" as the best thing to
-    // order. Dishes and drinks are ranked separately instead of blended.
+    // orders — ranked together they crowd the food out entirely. Dishes and
+    // drinks are ranked separately instead of blended.
     const all = data as Row[]
     const rows = all.filter(r => !r.incidental)
     const drinks = all.filter(r => r.incidental)
     const any = () => true
     const text = [
-      'REAL SALES DATA (two years of actual billing — these are facts, not guesses):',
+      'REAL SALES & MENU DATA (derived from 2+ years of PetPooja billing data across outlets — these are facts, not guesses):',
       `• Most ordered overall: ${top(rows, any, 10)}`,
+      `• Best Vegetarian options overall: ${top(rows, isVeg, 10)}`,
+      `• Best Non-Vegetarian options overall: ${top(rows, r => !isVeg(r), 10)}`,
       `• Best for breakfast/tiffin: ${top(rows, r => r.daypart === 'breakfast', 8)}`,
-      `• Best at lunch: ${top(rows, r => r.daypart === 'lunch', 8)}`,
-      `• Best at dinner: ${top(rows, r => r.daypart === 'dinner', 8)}`,
+      `• Best Vegetarian options for lunch: ${top(rows, r => r.daypart === 'lunch' && isVeg(r), 8)}`,
+      `• Best Non-Vegetarian options for lunch: ${top(rows, r => r.daypart === 'lunch' && !isVeg(r), 8)}`,
+      `• Best Vegetarian options for dinner: ${top(rows, r => r.daypart === 'dinner' && isVeg(r), 8)}`,
+      `• Best Non-Vegetarian options for dinner: ${top(rows, r => r.daypart === 'dinner' && !isVeg(r), 8)}`,
       `• Most ordered dine-in: ${top(rows, r => r.lane === 'dinein', 8)}`,
       `• Most ordered for takeaway/parcel: ${top(rows, r => r.lane === 'takeaway', 8)}`,
       `• Most ordered on Swiggy/Zomato: ${top(rows, r => r.lane === 'aggregator', 8)}`,
-      `• Most ordered drinks/extras: ${top(drinks, any, 6)}`,
+      `• Most ordered beverages/extras: ${top(drinks, any, 6)}`,
       '',
-      'Use these when someone asks what is good, what to order, what is popular, or',
-      'what to get delivered. Recommend from THIS list — it is what guests actually',
-      'order.',
-      '',
-      'TWO SOURCES, DIFFERENT JOBS: the menu above in your instructions is the',
-      'PUBLISHED menu and is authoritative for prices. This sales list is',
-      'authoritative for POPULARITY — what guests actually order most. Use the menu',
-      'for what a dish costs, and this list for what to recommend.',
-      '',
-      'If a dish appears here but not on the published menu, recommend it by name and',
-      'say you would have to check the exact price rather than quoting one — the',
-      'approximate figures here are averages across outlets and years, not the',
-      'counter price.',
+      'STRICT PRICING & RECOMMENDATION RULES:',
+      '1. ALWAYS quote exact prices from the real data above when guests ask about prices or menu items listed here.',
+      '2. NEVER invent, guess, or hallucinate prices for items NOT present in this real sales data (e.g. Masala Chai, Pani Puri, etc.). If an item is not in this data, inform the guest that prices vary by branch/delivery channel and suggest calling +91 90638 44021.',
+      '3. For vegetarian queries (e.g. "vegetarian for lunch"), recommend specifically from the Vegetarian lists above (e.g. Sangam Spl. Thali, Pulka, Butter Naan, Veg Biryani, Roti, Paneer dishes).',
     ].join('\n')
 
     cache = { text, at: Date.now() }
