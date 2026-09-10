@@ -338,40 +338,38 @@ export function generatePopularCateringQuote(
   const platePrice = isVegOnly ? 499 : 649
   let subtotal = platePrice * guestCount
   const menuItems = isVegOnly ? [
-    '• Welcome Drinks: Fresh Lime Mint Cooler',
-    `• Starters: Paneer 65 & Crispy Veg Manchurian (${starterTrays} Trays / 100-120 pcs each)`,
-    `• Biryanis: Signature Hyderabadi Veg Dum Biryani (${biryaniTrays} Full Trays ≈5kg each)`,
-    `• Curries: Paneer Butter Masala & Dal Tadka (${curryTrays} Trays each)`,
-    `• Breads: Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
-    `• Desserts: Hot Gulab Jamun & Quarbani Ka Meetha`,
-    '• Live Setup: Live Tandoor & Beverage Station Included'
+    '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Lime Mint Cooler / Sweet Lime Juice',
+    `### 🥗 Starters & Appetizers [✏️ Edit]\n• Paneer 65 & Crispy Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
+    `### 🍛 Main Course Curries [✏️ Edit]\n• Paneer Butter Masala & Dal Tadka (${curryTrays} Full Trays each)`,
+    `### 🍚 Rice & Biryani [✏️ Edit]\n• Signature Hyderabadi Veg Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
+    `### 🫓 Live Tandoor Breads [✏️ Edit]\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
+    `### 🍨 Sweets & Desserts [✏️ Edit]\n• Hot Gulab Jamun & Royal Quarbani Ka Meetha`
   ] : [
-    '• Welcome Drinks: Fresh Mint Mojito',
-    `• Starters: Hyderabadi Chicken 65 & Veg Manchurian (${starterTrays} Trays / 100-120 pcs each)`,
-    `• Biryanis: Signature Hyderabadi Chicken Dum Biryani (${biryaniTrays} Full Trays ≈5kg each)`,
-    `• Curries: Butter Chicken & Paneer Butter Masala (${curryTrays} Trays each)`,
-    `• Breads: Fresh Butter Naan & Pulkas (${breadCount} pcs live on site)`,
-    `• Desserts: Royal Double Ka Meetha & Gulab Jamun`,
-    '• Live Setup: Live Tandoor & Beverage Station Included'
+    '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Mint Mojito / Welcome Mocktail',
+    `### 🥗 Starters & Appetizers [✏️ Edit]\n• Hyderabadi Chicken 65 & Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
+    `### 🍛 Main Course Curries [✏️ Edit]\n• Butter Chicken & Paneer Butter Masala (${curryTrays} Full Trays each)`,
+    `### 🍚 Rice & Biryani [✏️ Edit]\n• Signature Hyderabadi Chicken Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
+    `### 🫓 Live Tandoor Breads [✏️ Edit]\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
+    `### 🍨 Sweets & Desserts [✏️ Edit]\n• Royal Double Ka Meetha & Hot Gulab Jamun`
   ]
 
   if (extraModifications.length > 0) {
     extraModifications.forEach(mod => {
       if (mod.toLowerCase().includes('mutton')) {
-        menuItems.push(`• Special Addition: Mutton Chukka (${curryTrays} Full Trays)`)
+        menuItems.push(`### 🍖 Special Addition [✏️ Edit]\n• Mutton Chukka (${curryTrays} Full Trays)`)
         subtotal += 120 * guestCount
       }
     })
   }
 
   return {
-    headline: `🚚 **Outdoor Catering Quote (${branch || 'Nearby Outlet'})**`,
+    headline: `🚚 **Outdoor Catering & Live Food Setup Estimation**`,
     menuItems,
     trayBreakdown: [
       `• Biryani Trays: **${biryaniTrays} Full Trays** (feeds 25–30 pax per tray)`,
       `• Starter Trays: **${starterTrays} Full Trays** (feeds 40–50 pax per tray)`,
       `• Curry Trays: **${curryTrays} Full Trays** (feeds 35–45 pax per tray)`,
-      `• Live Breads: **${breadCount} Pieces**`
+      `• Live Tandoor Breads: **${breadCount} Pieces** (prepared live on site)`
     ],
     pricePerPlate: platePrice,
     subtotal,

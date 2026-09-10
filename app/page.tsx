@@ -82,10 +82,8 @@ const PACKAGE_CARDS = [
 ];
 
 const INITIAL_SUGGESTIONS = [
-  { label: '🏛️ Indoor Banquet Packages', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
-  { label: '🚚 Outdoor Catering & Trays', text: 'I want Outdoor Catering with custom trays and live food setup' },
-  { label: '🍛 Custom Menu Quote', text: 'I want to share my custom dish list for catering to calculate tray quantities and pricing' },
-  { label: '📍 Explore Branches & Halls', text: 'What banquet halls and branches do you have available?' },
+  { label: '🏛️ Indoor Catering', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
+  { label: '🚚 Outdoor Catering', text: 'I want Outdoor Catering with custom trays and food setup' },
 ];
 
 const BRANCHES = [

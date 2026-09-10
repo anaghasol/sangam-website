@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSangamUnifiedKnowledgeContext } from '@/lib/sangam-knowledge'
 import { askFreeModels } from '@/lib/free-ai'
 import { lookupCustomerByPhone, extractPhoneNumber } from '@/lib/customer-lookup'
-import { calculateEffectiveGuests, generatePopularCateringQuote } from '@/lib/catering-portions'
+import { calculateEffectiveGuests, generatePopularCateringQuote, extractCustomDishes } from '@/lib/catering-portions'
 import { createClient } from '@supabase/supabase-js'
 
 const SYSTEM_PROMPT = `You are Arjun, the friendly Hospitality and Catering Manager at Sangam Hotels Hyderabad (By Sameeksha Hospitality).
@@ -34,8 +34,42 @@ CATERING SERVICE TYPES & PRICING:
      * Platinum Non-Veg Menu: ₹1,000/plate (Grand wedding spread with Mutton Dum Biryani, live counters, royal desserts)
 
 2. OUTDOOR CATERING & CUSTOM TRAYS:
-   - 100% custom menu & tray-based catering (no rigid package lock-in).
-   - Tray Capacities: Biryani/Rice (25-30 pax/tray), Starters (40-50 pax/tray), Curries/Dals (35-45 pax/tray), Live Breads (2.5 pcs/pax), Desserts (35-40 pax/tray).
+   - 100% custom menu & tray-based catering (no rigid package lock-in, delivered to customer's venue/home/office/farmhouse).
+   - Standard Spreads:
+     * Popular Veg Spread: ₹499/plate (Paneer 65, Veg Manchurian, Veg Dum Biryani, Paneer Butter Masala, Dal Tadka, Butter Naan & Pulka live, Sweets)
+     * Hyderabadi Non-Veg Spread: ₹649/plate (Chicken 65, Veg Manchurian, Hyderabadi Chicken Dum Biryani, Butter Chicken, Paneer Butter Masala, Live Naan & Pulkas, Sweets)
+   - Tray Capacities:
+     * Biryani/Rice: 25-30 pax per full tray (≈5kg each)
+     * Starters: 40-50 pax per full tray (100-120 pcs)
+     * Curries/Dals: 35-45 pax per full tray
+     * Live Breads: 2.5 pcs per guest (prepared live at site)
+     * Sweets & Desserts: 35-40 pax per tray
+
+OUTDOOR CATERING CONVERSATIONAL WORKFLOW (STEP-BY-STEP INTAKE & ESTIMATION):
+When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menus:
+1. NEVER ask for banquet hall slots or assign banquet halls — this is delivery/onsite setup at customer's venue!
+2. Gather the necessary event details step-by-step (NEVER re-ask for details already provided by the customer):
+   - Step 1: Occasion Name (e.g. Birthday Party, Housewarming / Gruhapravesam, Wedding / Reception, Corporate Event, Farmhouse Get-together)
+   - Step 2: Event Date & Time (Event Date and Lunch / Dinner / Morning service time)
+   - Step 3: Guest Count (Pax: 30, 50, 100, 150, 200+ guests)
+   - Step 4: Menu Items / Spread (Popular Veg Spread ₹499/plate, Hyderabadi Non-Veg Spread ₹649/plate, or custom dishes)
+3. Estimation Rule: The MAIN things needed for estimation are **Pax** and **Items/Menu**.
+   - As soon as Pax and Items are provided (or if the customer already included them in their text), IMMEDIATELY generate and display the full Outdoor Catering Estimation!
+   - Acknowledge Occasion, Date, and Time if provided.
+   - Display:
+     * Headline: 🚚 **Outdoor Catering & Live Food Setup Estimation**
+     * Event Details (Occasion, Date & Time if known)
+     * Menu spread & dishes organized by section with [✏️ Edit] tags:
+       ### 🍹 Welcome Drinks [✏️ Edit]
+       ### 🥗 Starters & Appetizers [✏️ Edit]
+       ### 🍛 Main Course Curries [✏️ Edit]
+       ### 🍚 Rice & Biryani [✏️ Edit]
+       ### 🫓 Live Tandoor Breads [✏️ Edit]
+       ### 🍨 Sweets & Desserts [✏️ Edit]
+     * Portion & Tray Sizing breakdown (Biryani trays, Starter trays, Curry trays, Live Tandoor breads)
+     * Estimation: ₹Price/plate × Pax = Total Amount (with 5% loyalty discount if returning customer)
+     * What's Included: Buffet chafing dishes, warmers, live counter, dedicated serving staff, premium disposable cutlery
+     * Reference ID (e.g. SGM-A8421) and 10-day validity
 
 INDOOR BANQUET CONVERSATIONAL WORKFLOW (STRICT SEQUENTIAL INTAKE):
 Always acknowledge earlier details and ask ONLY for the NEXT missing detail in this strict order:
@@ -143,6 +177,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const hasCustomDishes = extractCustomDishes(allUserText).length >= 2 || extractCustomDishes(lastUserMsg).length >= 2
+    const hasOutdoorSpread = lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('tray sizing') || lowerAllText.includes('andhra vegetarian') || lowerAllText.includes('dum biryani & non-veg') || lowerAllText.includes('custom dishes')
+    const hasOccasionDetected = /\b(birthday|housewarming|gruhapravesam|gruhapravesh|wedding|reception|anniversary|corporate|office|farmhouse|get-together|get together|gathering|party|engagement|sangeet|haldi|pooja|puja|cradle ceremony|naming ceremony|celebration|meeting)\b/i.test(lowerAllText)
+    const hasTimeDetected = /\b(lunch|dinner|breakfast|morning|afternoon|evening|pm|am|\d{1,2}\s*(?:am|pm)|\d{1,2}:\d{2})\b/i.test(lowerAllText)
+    const hasOutdoorItemsDetected = lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('499') || lowerAllText.includes('649') || lowerAllText.includes('popular veg') || lowerAllText.includes('hyderabadi non-veg') || hasCustomDishes || lowerAllText.includes('custom dishes') || lowerAllText.includes('tray sizing')
+
+    const lastUserLower = lastUserMsg.toLowerCase()
+    const isOutdoorExplicit = lastUserLower.includes('outdoor') || lastUserLower.includes('tray') || lastUserLower.includes('outside') || lastUserLower.includes('catering at home') || lastUserLower.includes('delivery') || lastUserLower.includes('farmhouse') || lastUserLower.includes('spread')
+    const isIndoorExplicit = lastUserLower.includes('indoor') || lastUserLower.includes('banquet') || lastUserLower.includes('hall')
+
+    let isOutdoorFlow = false
+    if (isOutdoorExplicit) {
+      isOutdoorFlow = true
+    } else if (isIndoorExplicit) {
+      isOutdoorFlow = false
+    } else {
+      isOutdoorFlow = (lowerAllText.includes('outdoor') || lowerAllText.includes('tray') || hasCustomDishes || hasOutdoorSpread) && !lowerAllText.includes('indoor') && !lowerAllText.includes('banquet')
+    }
+
     // 2. Customer Phone & Loyalty Lookup across all user messages
     let customerContext = ''
     let detectedPhone: string | null = null
@@ -171,7 +224,17 @@ export async function POST(req: NextRequest) {
 
     // 3. Fetch Unified Knowledge Context (RAG, PetPooja, Eventmgmt DB, Portion Rules)
     const extraContext = await getSangamUnifiedKnowledgeContext(lastUserMsg)
-    const intakeStatusContext = `\nCURRENT INTAKE STATUS (DO NOT RE-ASK FOR ALREADY PROVIDED DETAILS):\n` +
+    const intakeStatusContext = isOutdoorFlow ? (
+      `\nCURRENT INTAKE STATUS (OUTDOOR CATERING & LIVE FOOD SETUP):\n` +
+      `• Service Type: Outdoor Catering / Live Food Setup at Customer's Venue (NEVER ask for banquet hall slots or branches!).\n` +
+      `• Occasion: ${hasOccasionDetected ? 'Already Provided' : 'Pending'}\n` +
+      `• Event Date: ${hasDateDetected ? 'Already Provided' : 'Pending'}\n` +
+      `• Event Time: ${hasTimeDetected ? 'Already Provided' : 'Pending'}\n` +
+      `• Guest Count (Pax): ${hasPaxDetected ? `${effectiveAdults} Guests` : 'Pending'}\n` +
+      `• Menu / Items: ${hasOutdoorItemsDetected ? 'Selected' : 'Pending'}\n` +
+      `CRITICAL INSTRUCTION: If both Pax and Menu/Items are provided (or if user provided them upfront in text), IMMEDIATELY generate and display the full Outdoor Catering Quote with tray sizing (₹499 Veg / ₹649 Non-Veg), total amount, included services, and [✏️ Edit] dish sections! Otherwise, ask ONLY for the NEXT 'Pending' detail in this exact order: Occasion -> Date & Time -> Pax -> Menu/Items. Never ask for fields that are already provided!`
+    ) : (
+      `\nCURRENT INTAKE STATUS (INDOOR AC BANQUET HALLS):\n` +
       `• Branch: ${mentionedBranch || 'Not specified yet'}\n` +
       `• Date: ${hasDateDetected ? 'Already Provided' : 'Pending'}\n` +
       `• Time Slot: ${hasSlotDetected ? 'Already Provided' : 'Pending'}\n` +
@@ -179,6 +242,7 @@ export async function POST(req: NextRequest) {
       `• Dietary Preference: ${lastDietaryDetected || 'Pending'}\n` +
       `• Menu Package: ${hasPackageDetected ? 'Selected' : 'Pending'}\n` +
       `CRITICAL INSTRUCTION: Review the CURRENT INTAKE STATUS above. Under NO circumstance should you ask for any field that is 'Already Provided'. Acknowledge the user's latest choice and prompt ONLY for the NEXT 'Pending' step in this exact order: Date -> Time Slot -> Pax -> Dietary -> Menu -> Estimation.`
+    )
 
     const systemPrompt = [
       SYSTEM_PROMPT,
@@ -192,10 +256,53 @@ export async function POST(req: NextRequest) {
 
     // 5. Smart Fallback if AI providers rate-limit
     if (!reply) {
-      if (hasPackageDetected) {
-        const serviceType = isOutdoor ? 'outdoor' : 'inhouse'
+      if (isOutdoorFlow) {
+        // If both pax and items are present (or if user already gave both upfront), estimate cost!
+        if (hasPaxDetected && hasOutdoorItemsDetected) {
+          const pax = (hasPaxDetected && effectiveAdults > 0) ? effectiveAdults : 50
+          const isVeg = lastDietaryDetected === 'veg' || isVegOnly || lowerAllText.includes('veg spread')
+
+          const quote = generatePopularCateringQuote(
+            'outdoor',
+            mentionedBranch || 'Hyderabad & Suburbs',
+            pax,
+            isVeg,
+            [],
+            lastUserMsg + ' ' + allUserText
+          )
+
+          const mult = loyaltyDiscount > 0 ? 0.95 : 1.0
+          const totalWithDiscount = Math.round(quote.finalTotal * mult)
+          const discountLine = loyaltyDiscount > 0 ? `\n• **5% Loyalty Discount Applied**: -₹${Math.round(quote.finalTotal * 0.05).toLocaleString('en-IN')}` : ''
+
+          reply = `${quote.headline}\n\n` +
+            `📋 **Menu Spread & Dishes Included**:\n` +
+            `${quote.menuItems.join('\n\n')}\n\n` +
+            `🍛 **Portion & Tray Sizing for ${pax} Guests**:\n` +
+            `${quote.trayBreakdown.join('\n')}\n\n` +
+            `💰 **Estimation**: ₹${quote.pricePerPlate}/plate × ${pax} Guests = **₹${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
+            `✨ **What's Included at Your Venue**:\n` +
+            `• Full-service buffet setup (chafing dishes, warmers, aesthetic buffet tables)\n` +
+            `• Live Tandoor & Roti preparation counter on site\n` +
+            `• Dedicated uniform serving staff\n` +
+            `• Premium disposable plates, cutlery & napkins\n\n` +
+            `You can tap **[✏️ Edit]** on any section above to customize dishes, or share your WhatsApp number to lock in this 10-day quote!`
+        } else if (!hasOccasionDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
+          reply = "Namaste! 🙏 I'm Arjun, hospitality and catering manager at Sangam Hotels Hyderabad. What **Occasion** are you planning outdoor catering for? (e.g. Birthday Party, Housewarming, Wedding, Corporate Event)"
+        } else if (!hasDateDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
+          reply = "Wonderful! What is your planned **Event Date** for the outdoor catering setup & delivery?"
+        } else if (!hasTimeDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
+          reply = "Great! What **Time** would you like the food to be served at your venue?\n\n• ☀️ **Lunch** (12:00 PM – 3:00 PM)\n• 🌙 **Dinner** (7:30 PM – 10:30 PM)\n• 🌅 **Morning Breakfast** (8:00 AM – 11:00 AM)"
+        } else if (!hasPaxDetected) {
+          reply = "Got it! How many **Guests (Pax)** are you expecting for the catering? (e.g. 30, 50, 100, 150+ guests)"
+        } else {
+          // Items missing
+          reply = `Thank you! For ${effectiveAdults} guests, which catering menu spread or items would you prefer?\n\n• 🌿 **Popular Veg Spread** (₹499/plate) — Paneer 65, Veg Manchurian, Veg Dum Biryani, Paneer Butter Masala, Dal Tadka, Live Naan & Pulkas, Sweets\n• 🍗 **Hyderabadi Non-Veg Spread** (₹649/plate) — Chicken 65, Veg Manchurian, Hyderabadi Chicken Dum Biryani, Butter Chicken, Paneer Butter Masala, Live Naan & Pulkas, Sweets\n• 🍛 **Custom Dishes & Live Counters** (Build your custom menu)`
+        }
+      } else if (hasPackageDetected) {
+        // Indoor Banquet Quote
         const quote = generatePopularCateringQuote(
-          serviceType,
+          'inhouse',
           mentionedBranch || 'Peerzadiguda / Hayathnagar',
           effectiveAdults,
           isVegOnly,
@@ -321,9 +428,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       reply: 'Hello! I am here to help you plan your catering and banquet events with Sangam Hotels. Could you please let me know which branch and how many guests you are expecting or call our manager directly at +91 90638 44021?',
       suggestions: [
-        { label: '🏛️ Indoor Banquet Packages', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
-        { label: '🚚 Outdoor Catering & Trays', text: 'I want Outdoor Catering with custom trays and live food setup' },
-        { label: '🍛 Custom Menu Quote', text: 'I want to share my custom dish list for catering to calculate tray quantities and pricing' }
+        { label: '🏛️ Indoor Catering', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
+        { label: '🚚 Outdoor Catering', text: 'I want Outdoor Catering with custom trays and food setup' }
       ]
     })
   }
@@ -339,15 +445,25 @@ export function generateDynamicSuggestions(
 
   if (userMessages.length === 0) {
     return [
-      { label: '🏛️ Indoor Banquet Packages', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
-      { label: '🚚 Outdoor Catering & Trays', text: 'I want Outdoor Catering with custom trays and live food setup' },
-      { label: '🍛 Custom Menu Quote', text: 'I want to share my custom dish list for catering to calculate tray quantities and pricing' },
-      { label: '📍 Explore Branches & Halls', text: 'What banquet halls and branches do you have available?' },
+      { label: '🏛️ Indoor Catering', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
+      { label: '🚚 Outdoor Catering', text: 'I want Outdoor Catering with custom trays and food setup' },
     ]
   }
 
+  const lastUserText = userMessages[userMessages.length - 1]?.content.toLowerCase() || ''
+  const isOutdoorExplicit = lastUserText.includes('outdoor') || lastUserText.includes('tray') || lastUserText.includes('outside') || lastUserText.includes('catering at home') || lastUserText.includes('delivery') || lastUserText.includes('farmhouse') || lastUserText.includes('spread')
+  const isIndoorExplicit = lastUserText.includes('indoor') || lastUserText.includes('banquet') || lastUserText.includes('hall')
+
+  let isOutdoorFlow = false
+  if (isOutdoorExplicit) {
+    isOutdoorFlow = true
+  } else if (isIndoorExplicit) {
+    isOutdoorFlow = false
+  } else {
+    isOutdoorFlow = (allUserText.includes('outdoor') || allUserText.includes('tray') || allUserText.includes('delivery') || allUserText.includes('spread')) && !allUserText.includes('indoor') && !allUserText.includes('banquet')
+  }
+
   const hasIndoor = allUserText.includes('indoor') || allUserText.includes('banquet') || allUserText.includes('hall')
-  const hasOutdoor = allUserText.includes('outdoor') || allUserText.includes('tray') || allUserText.includes('delivery')
   const hasBranch = allUserText.includes('peerzadiguda') || allUserText.includes('hayathnagar') || allUserText.includes('malkapur')
   const hasDate = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(allUserText)
   const hasSlot = allUserText.includes('lunch') || allUserText.includes('dinner') || allUserText.includes('full day') || (allUserText.includes('slot') && (allUserText.includes('slot 1') || allUserText.includes('slot 2') || allUserText.includes('slot 3') || allUserText.includes('slot1') || allUserText.includes('slot2') || allUserText.includes('lunch slot') || allUserText.includes('dinner slot')))
@@ -365,40 +481,112 @@ export function generateDynamicSuggestions(
     }
   }
 
-  // Case 1: Active Estimation & Quote (Menu Package has been selected!)
+  // Handle dish editing (applicable for both outdoor and indoor estimations)
+  if (lastUserText.includes('starter') || lastUserText.includes('appetizer')) {
+    return [
+      { label: '🥢 Add Paneer Tikka', text: 'Please swap one starter for Paneer Tikka' },
+      { label: '🥢 Add Chilli Chicken', text: 'Please swap one starter for Chilli Chicken' },
+      { label: '🥢 Add Veg Spring Rolls', text: 'Please swap one starter for Veg Spring Rolls' },
+      { label: '🥢 Add Chicken Majestic', text: 'Please swap one starter for Chicken Majestic' },
+      { label: '✅ Done Editing Starters', text: 'These starters look perfect. Please confirm the estimation' },
+    ]
+  }
+
+  if (lastUserText.includes('curry') || lastUserText.includes('curries') || lastUserText.includes('main course')) {
+    return [
+      { label: '🥘 Add Kadai Paneer', text: 'Please swap one curry for Kadai Paneer' },
+      { label: '🥘 Add Methi Chaman', text: 'Please swap one curry for Methi Chaman' },
+      { label: '🍗 Add Mughlai Chicken', text: 'Please swap one curry for Mughlai Chicken Masala' },
+      { label: '🍗 Add Mutton Rogan Josh', text: 'Please swap one curry for Mutton Rogan Josh' },
+      { label: '✅ Done Editing Curries', text: 'These curries look perfect. Please confirm the estimation' },
+    ]
+  }
+
+  if (lastUserText.includes('biryani') || lastUserText.includes('dessert') || lastUserText.includes('sweet')) {
+    return [
+      { label: '🍚 Add Mutton Dum Biryani', text: 'Can we upgrade the Biryani to Hyderabadi Mutton Dum Biryani?' },
+      { label: '🍨 Add Qubani Ka Meetha', text: 'Please add Royal Qubani Ka Meetha to Desserts' },
+      { label: '🍨 Add Gulab Jamun & Ice Cream', text: 'Please add Hot Gulab Jamun with Vanilla Ice Cream' },
+      { label: '✅ Done Editing Desserts', text: 'The desserts and biryani look perfect. Please confirm the estimation' },
+    ]
+  }
+
+  const hasOccasion = /\b(birthday|housewarming|gruhapravesam|gruhapravesh|wedding|reception|anniversary|corporate|office|farmhouse|get-together|get together|gathering|party|engagement|sangeet|haldi|pooja|puja|cradle ceremony|naming ceremony|celebration|meeting)\b/i.test(allUserText)
+  const hasTime = /\b(lunch|dinner|breakfast|morning|afternoon|evening|pm|am|\d{1,2}\s*(?:am|pm)|\d{1,2}:\d{2})\b/i.test(allUserText)
+  const hasOutdoorItems = allUserText.includes('veg spread') || allUserText.includes('non-veg spread') || allUserText.includes('499') || lowerReply.includes('499') || allUserText.includes('649') || lowerReply.includes('649') || allUserText.includes('popular veg') || allUserText.includes('hyderabadi non-veg') || extractCustomDishes(allUserText).length >= 2 || allUserText.includes('custom dishes') || allUserText.includes('tray sizing')
+
+  // Case 1: Outdoor Catering Flow (Step-by-step: Occasion -> Date -> Time -> Pax -> Items -> Estimation)
+  if (isOutdoorFlow) {
+    // A. Estimation State: Main things needed (Pax and Items) are provided!
+    if (hasPax && hasOutdoorItems) {
+      return [
+        { label: '✏️ Edit Starters', text: 'I would like to swap and customize the Starters section' },
+        { label: '✏️ Edit Curries', text: 'I would like to swap and customize the Main Curries section' },
+        { label: '✏️ Edit Biryani & Desserts', text: 'I would like to swap and customize Biryani & Desserts' },
+        { label: '🍲 Add Live Dosa Counter', text: 'Can we add a live Dosa and Tiffin counter to this outdoor catering?' },
+        { label: '📱 Save Quote on WhatsApp', text: 'I would like to save this outdoor catering quote for 10 days. My WhatsApp number is ' },
+        { label: '👥 Recalculate for 100 Pax', text: 'Please recalculate this outdoor catering quote for 100 guests' },
+      ]
+    }
+
+    // B. Step 1: Occasion Name (if not provided)
+    if (!hasOccasion && !hasPax && !hasOutdoorItems) {
+      return [
+        { label: '🎉 Birthday Party', text: 'The occasion is a Birthday Party' },
+        { label: '🏡 Housewarming', text: 'The occasion is Housewarming (Gruhapravesam)' },
+        { label: '💍 Wedding / Reception', text: 'The occasion is a Wedding / Reception' },
+        { label: '💼 Corporate Event', text: 'The occasion is a Corporate Event' },
+        { label: '🌴 Farmhouse / Gathering', text: 'The occasion is a Farmhouse Get-together' },
+      ]
+    }
+
+    // C. Step 2: Event Date (if not provided)
+    if (!hasDate && !hasPax && !hasOutdoorItems) {
+      return getDynamicDateChips()
+    }
+
+    // D. Step 3: Event Time (if not provided)
+    if (!hasTime && !hasPax && !hasOutdoorItems) {
+      return [
+        { label: '☀️ Lunch (12 PM - 3 PM)', text: 'The event time is Lunch (12:00 PM - 3:00 PM)' },
+        { label: '🌙 Dinner (7:30 PM - 10:30 PM)', text: 'The event time is Dinner (7:30 PM - 10:30 PM)' },
+        { label: '🌅 Morning Breakfast (8 AM - 11 AM)', text: 'The event time is Morning Breakfast (8:00 AM - 11:00 AM)' },
+      ]
+    }
+
+    // E. Step 4: Pax (Guest Count) (if not provided)
+    if (!hasPax) {
+      return [
+        { label: '👥 30 Guests', text: 'We are expecting approximately 30 guests' },
+        { label: '👥 50 Guests', text: 'We are expecting approximately 50 guests' },
+        { label: '👥 100 Guests', text: 'We are expecting approximately 100 guests' },
+        { label: '👥 150 Guests', text: 'We are expecting approximately 150 guests' },
+        { label: '👥 200+ Guests', text: 'We are expecting approximately 200 guests' },
+      ]
+    }
+
+    // F. Step 5: Menu Items / Spread (if not provided)
+    if (!hasOutdoorItems) {
+      return [
+        { label: '🌿 Popular Veg Spread (₹499)', text: 'We would like the Popular Veg Spread at ₹499 per plate' },
+        { label: '🍗 Hyderabadi Non-Veg (₹649)', text: 'We would like the Hyderabadi Non-Veg Spread at ₹649 per plate' },
+        { label: '🍛 Custom Dishes & Counters', text: 'I want to select custom dishes and live counters' },
+      ]
+    }
+
+    // Default outdoor estimation chips
+    return [
+      { label: '🌿 Pure Veg Spread (₹499)', text: 'Please recalculate for Pure Veg Spread at ₹499 per plate' },
+      { label: '🍗 Non-Veg Spread (₹649)', text: 'Please recalculate for Hyderabadi Non-Veg Spread at ₹649 per plate' },
+      { label: '👥 50 Guests', text: 'Please recalculate this outdoor catering quote for 50 guests' },
+      { label: '👥 100 Guests', text: 'Please recalculate this outdoor catering quote for 100 guests' },
+      { label: '🍲 Add Live Dosa Counter', text: 'Can we add a live Dosa and Tiffin counter to this outdoor catering?' },
+      { label: '📱 Save Quote on WhatsApp', text: 'I would like to save this outdoor catering quote for 10 days. My WhatsApp number is ' },
+    ]
+  }
+
+  // Case 2: Active Indoor Estimation & Quote (Menu Package has been selected!)
   if (hasPackage) {
-    const lastUserText = userMessages[userMessages.length - 1]?.content.toLowerCase() || ''
-
-    if (lastUserText.includes('starter') || lastUserText.includes('appetizer')) {
-      return [
-        { label: '🥢 Add Paneer Tikka', text: 'Please swap one starter for Paneer Tikka' },
-        { label: '🥢 Add Chilli Chicken', text: 'Please swap one starter for Chilli Chicken' },
-        { label: '🥢 Add Veg Spring Rolls', text: 'Please swap one starter for Veg Spring Rolls' },
-        { label: '🥢 Add Chicken Majestic', text: 'Please swap one starter for Chicken Majestic' },
-        { label: '✅ Done Editing Starters', text: 'These starters look perfect. Please confirm the estimation' },
-      ]
-    }
-
-    if (lastUserText.includes('curry') || lastUserText.includes('curries') || lastUserText.includes('main course')) {
-      return [
-        { label: '🥘 Add Kadai Paneer', text: 'Please swap one curry for Kadai Paneer' },
-        { label: '🥘 Add Methi Chaman', text: 'Please swap one curry for Methi Chaman' },
-        { label: '🍗 Add Mughlai Chicken', text: 'Please swap one curry for Mughlai Chicken Masala' },
-        { label: '🍗 Add Mutton Rogan Josh', text: 'Please swap one curry for Mutton Rogan Josh' },
-        { label: '✅ Done Editing Curries', text: 'These curries look perfect. Please confirm the estimation' },
-      ]
-    }
-
-    if (lastUserText.includes('biryani') || lastUserText.includes('dessert') || lastUserText.includes('sweet')) {
-      return [
-        { label: '🍚 Add Mutton Dum Biryani', text: 'Can we upgrade the Biryani to Hyderabadi Mutton Dum Biryani?' },
-        { label: '🍨 Add Qubani Ka Meetha', text: 'Please add Royal Qubani Ka Meetha to Desserts' },
-        { label: '🍨 Add Gulab Jamun & Ice Cream', text: 'Please add Hot Gulab Jamun with Vanilla Ice Cream' },
-        { label: '✅ Done Editing Desserts', text: 'The desserts and biryani look perfect. Please confirm the estimation' },
-      ]
-    }
-
-    // Default Estimation Quick Actions
     return [
       { label: '✏️ Edit Starters', text: 'I would like to swap and customize the Starters section' },
       { label: '✏️ Edit Curries', text: 'I would like to swap and customize the Main Curries section' },
@@ -406,29 +594,6 @@ export function generateDynamicSuggestions(
       { label: '📱 Save Quote on WhatsApp', text: 'I would like to save this quote for 10 days. My WhatsApp number is ' },
       { label: '🏛️ Book Hall Viewing', text: 'Can I schedule a banquet hall visit at the branch?' },
       { label: '👥 Recalculate for 150 Pax', text: 'Please recalculate this quote for 150 guests' },
-    ]
-  }
-
-  // Case 2: Outdoor Catering Flow (only if explicitly outdoor and not indoor)
-  if (hasOutdoor && !hasIndoor && !hasDate && !hasSlot) {
-    if (!hasPax) {
-      return [
-        { label: '👥 20 Guests', text: 'We are planning catering for 20 guests' },
-        { label: '👥 50 Guests', text: 'We are planning catering for 50 guests' },
-        { label: '👥 100 Guests', text: 'We are planning catering for 100 guests' },
-        { label: '👥 150 Guests', text: 'We are planning catering for 150 guests' },
-      ]
-    }
-    if (!hasBranch) {
-      return [
-        { label: '🚚 Deliver to Peerzadiguda Area', text: 'Catering delivery is needed around Peerzadiguda / Uppal area' },
-        { label: '🚚 Deliver to Hayathnagar Area', text: 'Catering delivery is needed around Hayathnagar / L B Nagar area' },
-      ]
-    }
-    return [
-      { label: '📋 Popular Veg Spread', text: 'Please generate a popular Andhra vegetarian catering spread with tray sizing' },
-      { label: '🍗 Hyderabadi Non-Veg Spread', text: 'Please generate a Hyderabadi Dum Biryani & Non-Veg spread with tray sizing' },
-      { label: '🍲 Live Dosa & Tiffin Counter', text: 'Can we include a live Dosa & Tandoor counter with this catering?' },
     ]
   }
 
@@ -493,10 +658,8 @@ export function generateDynamicSuggestions(
 
   // Default discovery
   return [
-    { label: '🏛️ Indoor Banquet Packages', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
-    { label: '🚚 Outdoor Catering & Trays', text: 'I want Outdoor Catering with custom trays and live food setup' },
-    { label: '🍛 Custom Menu Quote', text: 'I want to share my custom dish list for catering to calculate tray quantities and pricing' },
-    { label: '📍 Explore Branches & Halls', text: 'What banquet halls and branches do you have available?' },
+    { label: '🏛️ Indoor Catering', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
+    { label: '🚚 Outdoor Catering', text: 'I want Outdoor Catering with custom trays and food setup' },
   ]
 }
 

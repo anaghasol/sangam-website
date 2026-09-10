@@ -6,10 +6,8 @@ import { getDynamicArjunGreeting } from "@/lib/greeting";
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 const INITIAL_SUGGESTIONS = [
-  { label: "🏛️ Indoor Banquet Packages", text: "I want an Indoor AC Banquet Hall quote with standard packages" },
-  { label: "🚚 Outdoor Catering & Trays", text: "I want Outdoor Catering with custom trays and live food setup" },
-  { label: "🍛 Custom Menu Quote", text: "I want to share my custom dish list for catering to calculate tray quantities and pricing" },
-  { label: "📍 Explore Branches & Halls", text: "What banquet halls and branches do you have available?" },
+  { label: "🏛️ Indoor Catering", text: "I want an Indoor AC Banquet Hall quote with standard packages" },
+  { label: "🚚 Outdoor Catering", text: "I want Outdoor Catering with custom trays and food setup" },
 ];
 
 function renderChatMessage(content: string, isUser = false, onEditSection?: (title: string) => void) {
