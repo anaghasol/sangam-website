@@ -24,7 +24,10 @@ export function getDynamicArjunGreeting(): string {
   } else if (hours >= 17 && hours < 22) {
     timeGreeting = 'Good evening'
   } else {
-    timeGreeting = 'Namaste & greetings'
+    // Was 'Namaste & greetings' — every variation below already opens with
+    // its own "Namaste! 🙏" or "Namaste &", so that produced a literal
+    // "Namaste! 🙏 Namaste & greetings!" double-greeting late at night.
+    timeGreeting = 'Warm greetings'
   }
 
   // 2. Day of Week Context

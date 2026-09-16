@@ -3,7 +3,8 @@ import { getSangamUnifiedKnowledgeContext } from '@/lib/sangam-knowledge'
 import { askFreeModels } from '@/lib/free-ai'
 import { lookupCustomerByPhone, extractPhoneNumber } from '@/lib/customer-lookup'
 import { calculateEffectiveGuests, generatePopularCateringQuote, extractCustomDishes } from '@/lib/catering-portions'
-import { getSangamCateringLiveData, getBranchIdByName } from '@/lib/sangam-catering'
+import { getSangamCateringLiveData, getBranchIdByName, getOccasionIdByName } from '@/lib/sangam-catering'
+import { getIndoorBookingIntelligence, getOutdoorBookingIntelligence } from '@/lib/sangam-booking-intelligence'
 import { createClient } from '@supabase/supabase-js'
 
 const SYSTEM_PROMPT = `You are Arjun, the friendly Hospitality and Catering Manager at Sangam Hotels Hyderabad (By Sameeksha Hospitality).
@@ -69,21 +70,11 @@ Always acknowledge earlier details and ask ONLY for the NEXT missing detail in t
 7. Full Estimation & Dish Spread Breakdown: ONLY AFTER the customer selects their menu package, generate the full estimation:
    - Matching AC Banquet Hall based on pax and branch, chosen from the live hall list below (not a guess).
    - Pricing: Guest count × Plate rate (from the live block) = Total Catering Amount. Only say the hall fee is waived if the live data confirms the catering total meets that hall's free-hall threshold — otherwise say the hall fee will be confirmed.
-   - Itemized Dish Spread organized by SECTION with "[✏️ Edit]" tag on each section header:
-     ### 🍹 Welcome Drinks [✏️ Edit]
-     • Fresh Mint Mojito / Welcome Juice
-     ### 🥗 Starters & Appetizers [✏️ Edit]
-     • ... (specific dishes included in that package)
-     ### 🍛 Main Course Curries [✏️ Edit]
-     • ... (specific dishes included in that package)
-     ### 🍲 Dal & Traditional [✏️ Edit]
-     • ... (specific dishes included in that package)
-     ### 🍚 Rice & Biryani [✏️ Edit]
-     • ... (specific dishes included in that package)
-     ### 🫓 Live Tandoor Breads [✏️ Edit]
-     • ... (specific breads)
-     ### 🍨 Sweets & Desserts [✏️ Edit]
-     • ... (specific desserts)
+   - Itemized Dish Spread organized by SECTION with "[✏️ Edit]" tag on each section header. The chosen package's REAL dish breakdown (real categories, sections, default vs. choosable dishes, add-on upcharges) is supplied under that menu's price line in the "REAL DATABASE CATERING & EVENT PRICING" block below — use those exact dishes and section names, in that grouping. Never invent a dish that isn't listed there. If a package has no breakdown listed (older menus not yet in the menu builder), say the exact dish list will be confirmed by the catering manager rather than inventing one.
+     - MANDATORY: if a section says "(choose any N)" in the data block, you MUST print that exact "(Choose any N)" note next to that section's header in your reply — never silently drop it. The guest needs to see the limit, not just the dish options.
+     - Overage rule: if the guest asks for MORE dishes in a section than its stated limit N, the extra dish(es) beyond N are chargeable add-ons — use that specific dish's own [add-on]/extra-price figure from the data block if it has one; if the requested extra dish has no extra-price figure on file, say the extra charge for it will be confirmed by the catering manager rather than inventing a number. Never let an over-the-limit selection pass as free.
+     - A section marked [add-on, extra charge applies] is NOT included in the base plate rate — only add its price if the guest selects it.
+     - A section marked [complimentary] is included at no extra charge.
    - Explain: "You can tap any [✏️ Edit] button next to a section header or the quick action chips below to customize dishes, or share your WhatsApp number to lock in your 10-day draft quote!"
 
 CUSTOM DISHES INTAKE RULE:
@@ -156,6 +147,17 @@ export async function POST(req: NextRequest) {
     const hasCustomDishes = extractCustomDishes(allUserText).length >= 2 || extractCustomDishes(lastUserMsg).length >= 2
     const hasOutdoorSpread = lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('tray sizing') || lowerAllText.includes('andhra vegetarian') || lowerAllText.includes('dum biryani & non-veg') || lowerAllText.includes('custom dishes')
     const hasOccasionDetected = /\b(birthday|housewarming|gruhapravesam|gruhapravesh|wedding|reception|anniversary|corporate|office|farmhouse|get-together|get together|gathering|party|engagement|sangeet|haldi|pooja|puja|cradle ceremony|naming ceremony|celebration|meeting)\b/i.test(lowerAllText)
+    // Capture the occasion word itself (not just whether one was mentioned) so
+    // it can be resolved to a real eventmgmt.occasion.id for booking-history
+    // lookups below — a plain boolean isn't enough to query by.
+    const occasionMatch = lowerAllText.match(/\b(birthday|housewarming|gruhapravesam|gruhapravesh|wedding|reception|anniversary|corporate|farmhouse|engagement|sangeet|haldi|pooja|puja|celebration)\b/i)
+    const detectedOccasionText = occasionMatch ? occasionMatch[1] : null
+    // Month mentioned anywhere in the conversation, for the seasonal-demand
+    // signal — a real month name is what we can act on; relative phrases
+    // ("next week") don't carry enough to compare against a calendar month.
+    const monthNameMatch = lowerAllText.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i)
+    const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+    const detectedTargetMonth = monthNameMatch ? MONTH_ABBR.indexOf(monthNameMatch[1].toLowerCase()) : null
     const hasTimeDetected = /\b(lunch|dinner|breakfast|morning|afternoon|evening|pm|am|\d{1,2}\s*(?:am|pm)|\d{1,2}:\d{2})\b/i.test(lowerAllText)
     const hasOutdoorItemsDetected = lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('499') || lowerAllText.includes('649') || lowerAllText.includes('popular veg') || lowerAllText.includes('hyderabadi non-veg') || hasCustomDishes || lowerAllText.includes('custom dishes') || lowerAllText.includes('tray sizing')
 
@@ -194,18 +196,37 @@ export async function POST(req: NextRequest) {
         customerName = profile.name
         loyaltyDiscount = profile.loyaltyDiscountPercent || 5
         const favs = profile.favoriteItems.length > 0 ? ` (Favorite dishes: ${profile.favoriteItems.join(', ')})` : ''
-        customerContext = `\nCUSTOMER RECOGNITION (VERIFIED RETURNING CUSTOMER):\n• Name: ${profile.name || 'Valued Guest'}\n• Phone: ${profile.phone}\n• Total Past Orders: ${profile.orderCount}\n• Loyalty Discount: 5% Applicable on food total!${favs}\nInstruction: Greet the customer warmly by name and apply their 5% loyalty discount in quotes!`
+        // Real past catering/banquet bookings (eventmgmt) — distinct from
+        // PetPooja retail orders above. A customer can have one, the other,
+        // or both; only mention what's actually on file.
+        const ce = profile.lastCateringEvent
+        const cateringLine = profile.cateringBookingCount > 0 && ce
+          ? `\n• Past Catering/Banquet Bookings: ${profile.cateringBookingCount}` +
+            `\n• Most Recent Event: ${ce.occasion || 'Event'}${ce.pax ? ` for ${ce.pax} guests` : ''}${ce.branchName ? ` at ${ce.branchName}` : ''}${ce.eventDate ? ` on ${ce.eventDate}` : ''}${ce.serviceType ? ` (${ce.serviceType})` : ''}` +
+            `\nInstruction: You may reference this past event naturally (e.g. "Welcome back! Last time you booked ${ce.occasion || 'an event'} for ${ce.pax || ''} guests${ce.branchName ? ` at ${ce.branchName}` : ''} — would you like something similar this time?"). Never state the past total_amount unless the guest asks for it directly.`
+          : ''
+        const tagsLine = profile.tags.length > 0 ? `\n• Tags on file: ${profile.tags.join(', ')}` : ''
+        customerContext = `\nCUSTOMER RECOGNITION (VERIFIED RETURNING CUSTOMER):\n• Name: ${profile.name || 'Valued Guest'}\n• Phone: ${profile.phone}\n• Total Past Retail Orders: ${profile.orderCount}\n• Loyalty Discount: 5% Applicable on food total!${favs}${cateringLine}${tagsLine}\nInstruction: Greet the customer warmly by name and apply their 5% loyalty discount in quotes!`
       }
     }
 
     // 3. Fetch Unified Knowledge Context (RAG, PetPooja, Eventmgmt DB, Portion Rules),
     // the structured live catering data (real halls/menus/dishes), and the real
     // branch_id for whichever branch has been mentioned so far — all in parallel.
-    const [extraContext, liveCateringData, resolvedBranchId] = await Promise.all([
+    const [extraContext, liveCateringData, resolvedBranchId, resolvedOccasionId] = await Promise.all([
       getSangamUnifiedKnowledgeContext(lastUserMsg),
       getSangamCateringLiveData(),
       mentionedBranch ? getBranchIdByName(mentionedBranch) : Promise.resolve(null),
+      detectedOccasionText ? getOccasionIdByName(detectedOccasionText) : Promise.resolve(null),
     ])
+
+    // Booking-history grounding (real past events) — only worth the query
+    // once we actually have a guest count to compare against.
+    const bookingIntelligence = hasPaxDetected && effectiveAdults > 0
+      ? await (isOutdoorFlow
+          ? getOutdoorBookingIntelligence({ occasionId: resolvedOccasionId, pax: effectiveAdults, branchId: resolvedBranchId })
+          : getIndoorBookingIntelligence({ occasionId: resolvedOccasionId, pax: effectiveAdults, branchId: resolvedBranchId, targetMonth: detectedTargetMonth }))
+      : ''
     const liveOutdoorPriceLine = liveCateringData.outdoorMenus.length > 0
       ? liveCateringData.outdoorMenus.map(m => `₹${m.pricePerPax} ${m.dietaryType || ''}`.trim()).join(' / ')
       : 'live pricing from the database context below'
@@ -246,6 +267,7 @@ export async function POST(req: NextRequest) {
       customerContext,
       extraContext,
       branchHallContext,
+      bookingIntelligence,
       intakeStatusContext
     ].filter(Boolean).join('\n\n')
 
