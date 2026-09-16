@@ -35,8 +35,10 @@ export default function RootLayout({
     <html lang="en" className={`${playfair.variable} ${dmSans.variable}`}>
       <body>
         {children}
-        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
-        <script src="https://restros.ai/sitara/sangam-tracker.js" async />
+        {process.env.NODE_ENV === 'production' && (
+          // eslint-disable-next-line @next/next/no-sync-scripts
+          <script src="https://restros.ai/sitara/sangam-tracker.js" async />
+        )}
       </body>
     </html>
   );

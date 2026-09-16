@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { sortBranchesByNearest } from "@/lib/sangam-branch-distance";
+import { getDynamicArjunGreeting } from "@/lib/greeting";
 
 type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "contact" | "order";
 
@@ -64,6 +66,26 @@ const IMGS = {
   newBranch:    "/gp-malkapur-2.jpg",       // Malkapur JIO BP Plaza interior
 };
 
+const EVENT_QUICK_STARTS = [
+  { emoji: '💍', label: 'Wedding', defaultPax: '100' },
+  { emoji: '🎂', label: 'Birthday', defaultPax: '40' },
+  { emoji: '💼', label: 'Corporate', defaultPax: '50' },
+  { emoji: '🕌', label: 'Pooja / Haldi', defaultPax: '60' },
+  { emoji: '💑', label: 'Anniversary', defaultPax: '50' },
+];
+
+const PACKAGE_CARDS = [
+  { name: 'Silver', range: '₹399/plate', tag: 'Outdoor' },
+  { name: 'Gold', range: '₹649/plate', tag: 'Outdoor' },
+  { name: 'Platinum', range: '₹999/plate', tag: 'Outdoor' },
+  { name: 'Veg Indoor', range: '₹600/plate', tag: 'Banquet' },
+];
+
+const INITIAL_SUGGESTIONS = [
+  { label: '🏛️ Indoor Catering', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
+  { label: '🚚 Outdoor Catering', text: 'I want Outdoor Catering with custom trays and food setup' },
+];
+
 const BRANCHES = [
   {
     id: "peerzadiguda",
@@ -84,6 +106,8 @@ const BRANCHES = [
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Peerzadiguda+Hyderabad",
     swiggy: "",
     zomato: "https://www.zomato.com/hyderabad/sangam-hotel-l-b-nagar",
+    lat: 17.4087,
+    lon: 78.5833,
   },
   {
     id: "hayathnagar",
@@ -103,6 +127,8 @@ const BRANCHES = [
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Hayathnagar+Hyderabad",
     swiggy: "https://www.swiggy.com/city/hyderabad/sangam-hotel-krupa-colony-vanasthalipuram-rest571085",
     zomato: "https://www.zomato.com/hyderabad/sangam-hotel-vanasthalipuram",
+    lat: 17.3308,
+    lon: 78.6014,
   },
   {
     id: "malkapur",
@@ -122,6 +148,8 @@ const BRANCHES = [
     mapsLink: "https://maps.google.com/?q=Sangam+Hotels+Malkapur+Choutuppal",
     swiggy: "",
     zomato: "",
+    lat: 17.2625,
+    lon: 78.8988,
   },
   {
     id: "bakes-hayathnagar",
@@ -141,6 +169,8 @@ const BRANCHES = [
     mapsLink: "https://share.google/hZbW0oHkG2KJbKdcU",
     swiggy: "",
     zomato: "https://www.zomato.com/hyderabad/sangam-bakes-cakes-vanasthalipuram/order",
+    lat: 17.3308,
+    lon: 78.6014,
   },
   {
     id: "bakes-mansoorabad",
@@ -160,6 +190,8 @@ const BRANCHES = [
     mapsLink: "https://share.google/LvqnUASmK13LmXwYM",
     swiggy: "",
     zomato: "https://www.zomato.com/hyderabad/sangam-bakes-cakes-l-b-nagar/order",
+    lat: 17.3524,
+    lon: 78.5638,
   },
   {
     id: "tiffins-mansoorabad",
@@ -179,6 +211,8 @@ const BRANCHES = [
     mapsLink: "https://share.google/Cm4dgz1StJ9kDDozJ",
     swiggy: "",
     zomato: "",
+    lat: 17.3524,
+    lon: 78.5638,
   },
   {
     id: "tiffins-koyyalagudem",
@@ -198,6 +232,8 @@ const BRANCHES = [
     mapsLink: "https://share.google/CvuJkWSxmb7AWI7U9",
     swiggy: "",
     zomato: "",
+    lat: 17.2514,
+    lon: 78.9322,
   },
 ];
 
@@ -278,6 +314,93 @@ function Img({ src, alt, style }: { src: string; alt: string; style?: React.CSSP
   );
 }
 
+function renderChatMessage(content: string, isUser = false, onEditSection?: (title: string) => void) {
+  if (!content) return null;
+  const lines = content.split('\n');
+  return (
+    <>
+      {lines.map((line, lIdx) => {
+        if (line.trim() === '') {
+          return <span key={lIdx} style={{ display: 'block', height: 6 }} />;
+        }
+        if (line.startsWith('### ')) {
+          const headerText = line.replace(/^###\s*/, '');
+          const hasEditTag = headerText.includes('[✏️ Edit]');
+          const cleanTitle = headerText.replace('[✏️ Edit]', '').trim();
+          return (
+            <div
+              key={lIdx}
+              style={{
+                fontWeight: 700,
+                fontSize: '13px',
+                color: isUser ? '#fff' : '#8a1f2b',
+                marginTop: 10,
+                marginBottom: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderBottom: isUser ? '1px solid rgba(255,255,255,0.2)' : '1px solid #f0e6d5',
+                paddingBottom: 3,
+              }}
+            >
+              <span>{cleanTitle}</span>
+              {hasEditTag && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onEditSection) onEditSection(cleanTitle);
+                  }}
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: isUser ? '#fff' : '#8a1f2b',
+                    background: isUser ? 'rgba(255,255,255,0.2)' : '#faefe0',
+                    border: isUser ? '1px solid rgba(255,255,255,0.3)' : '1px solid #e2cfb4',
+                    padding: '2px 8px',
+                    borderRadius: 10,
+                    letterSpacing: '0.02em',
+                    cursor: onEditSection ? 'pointer' : 'default',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    transition: 'all 0.15s ease',
+                  }}
+                  title={`Customize ${cleanTitle}`}
+                >
+                  ✏️ Edit
+                </button>
+              )}
+            </div>
+          );
+        }
+        const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+        return (
+          <span key={lIdx} style={{ display: 'block', minHeight: 18 }}>
+            {parts.map((part, pIdx) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return (
+                  <strong key={pIdx} style={{ fontWeight: 700, color: isUser ? '#fff' : '#1f1a17' }}>
+                    {part.slice(2, -2)}
+                  </strong>
+                );
+              }
+              if (part.startsWith('`') && part.endsWith('`')) {
+                return (
+                  <code key={pIdx} style={{ background: isUser ? 'rgba(255,255,255,0.2)' : 'rgba(138,31,43,0.08)', color: isUser ? '#fff' : '#8a1f2b', padding: '1px 5px', borderRadius: 4, font: '600 12px monospace' }}>
+                    {part.slice(1, -1)}
+                  </code>
+                );
+              }
+              return part;
+            })}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 export default function SangamHotels() {
   const [screen, setScreen] = useState<Screen>("home");
   const [chatOpen, setChatOpen] = useState(false);
@@ -290,12 +413,18 @@ export default function SangamHotels() {
   const [liveReviews, setLiveReviews] = useState(TESTIMONIALS);
   const [igPosts, setIgPosts] = useState<Array<{ id: string; media_url: string; thumbnail_url?: string; permalink: string; caption?: string; media_type: string }>>([]);
   type ChatMsg = { role: 'user' | 'assistant'; content: string };
-  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([
-    { role: 'assistant', content: 'Namaste! 🙏 I\'m Arjun from Sangam Hotels. I can help you with our menu, branches, catering, rooms or anything else. What can I do for you?' }
-  ]);
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
+  const [chatSuggestions, setChatSuggestions] = useState<Array<{ label: string; text: string }>>(INITIAL_SUGGESTIONS);
+
+  useEffect(() => {
+    setChatMessages([
+      { role: 'assistant', content: getDynamicArjunGreeting() }
+    ]);
+  }, []);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatDatePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function loadReviews() {
@@ -342,6 +471,10 @@ export default function SangamHotels() {
     setChatMessages(next);
     setChatInput('');
     setChatLoading(true);
+    // Whatever quick-action chips were showing are now stale the moment a
+    // message goes out (clicked, typed, or picked from the calendar) — clear
+    // them so nothing lingers through the loading state; the response brings its own.
+    setChatSuggestions([]);
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -350,11 +483,34 @@ export default function SangamHotels() {
       });
       const data = await res.json();
       setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+      if (data.suggestions && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+        setChatSuggestions(data.suggestions);
+      }
     } catch {
       setChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, something went wrong. Please call +91 90638 44021.' }]);
     } finally {
       setChatLoading(false);
       setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+    }
+  }
+
+  function handleChipClick(ct: { label: string; text: string; isCalendar?: boolean }) {
+    if (ct.isCalendar || ct.label.toLowerCase().includes('calendar')) {
+      if (chatDatePickerRef.current) {
+        if ('showPicker' in HTMLInputElement.prototype) {
+          try {
+            chatDatePickerRef.current.showPicker();
+          } catch {
+            chatDatePickerRef.current.click();
+          }
+        } else {
+          chatDatePickerRef.current.click();
+        }
+      }
+      // Not clearing suggestions here — opening the date picker doesn't send
+      // a message yet, so the same chip row should stay usable until it does.
+    } else {
+      sendChat(ct.text);
     }
   }
 
@@ -1533,21 +1689,24 @@ export default function SangamHotels() {
             <button onClick={() => setChatOpen(false)} style={{ background:"rgba(255,255,255,.12)", border:"none", color:"#fff", width:30, height:30, borderRadius:9, cursor:"pointer", font:"600 15px/1 'DM Sans'" }}>✕</button>
           </div>
           {/* Messages */}
-          <div style={{ padding:"14px 14px 10px", background:"#fbf6ec", display:"flex", flexDirection:"column", gap:10, height:300, overflowY:"auto" }}>
+          <div style={{ padding:"14px 14px 10px", background:"#fbf6ec", display:"flex", flexDirection:"column", gap:12, height:350, overflowY:"auto" }}>
             {chatMessages.map((m, i) => (
-              <div key={i} style={{ display:"flex", justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div key={i} style={{ display:"flex", flexDirection:"column", alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap:6 }}>
                 <div style={{
-                  maxWidth:"82%",
+                  maxWidth:"84%",
                   background: m.role === 'user' ? "#8a1f2b" : "#fff",
                   color: m.role === 'user' ? "#fff" : "#3a352e",
                   border: m.role === 'user' ? "none" : "1px solid #ece2d2",
                   borderRadius: m.role === 'user' ? "15px 15px 5px 15px" : "15px 15px 15px 5px",
                   padding:"10px 14px",
                   font:"400 13.5px/1.55 'DM Sans'",
-                  whiteSpace:"pre-wrap",
+                  boxShadow:"0 2px 6px rgba(0,0,0,0.03)"
                 }}>
-                  {m.content}
+                  {renderChatMessage(m.content, m.role === 'user', (sectionTitle) => {
+                    sendChat(`I would like to swap and customize dishes in the ${sectionTitle} section`);
+                  })}
                 </div>
+
               </div>
             ))}
             {chatLoading && (
@@ -1561,14 +1720,55 @@ export default function SangamHotels() {
             )}
             <div ref={chatBottomRef} />
           </div>
-          {/* Quick chips */}
-          {chatMessages.length <= 1 && (
-            <div style={{ display:"flex", gap:7, flexWrap:"wrap", padding:"8px 14px 4px", background:"#fbf6ec", borderTop:"1px solid #ece2d2" }}>
-              {["🛒 Order food","🎉 Catering enquiry","📍 Find a branch","🏨 Book a room","🎂 Custom cake"].map(q => (
-                <span key={q} onClick={() => sendChat(q)} style={{ cursor:"pointer", background:"#fff", border:"1px solid #d9bfa0", color:"#8a1f2b", borderRadius:16, padding:"7px 12px", font:"600 11.5px/1 'DM Sans'" }}>{q}</span>
-              ))}
-            </div>
-          )}
+
+          {/* Contextual Dynamic Step Action Chips above text field */}
+          <div style={{ display:"flex", gap:6, overflowX:"auto", padding:"8px 12px", background:"#fbf6ec", borderTop:"1px solid #ece2d2" }}>
+            {chatSuggestions.map(ct => (
+              <button
+                key={ct.label}
+                onClick={() => handleChipClick(ct)}
+                style={{
+                  cursor:"pointer",
+                  whiteSpace:"nowrap",
+                  background:"#fff",
+                  border:"1px solid #8a1f2b",
+                  color:"#8a1f2b",
+                  borderRadius:16,
+                  padding:"6px 12px",
+                  font:"600 11.5px/1 'DM Sans'",
+                  display:"inline-flex",
+                  alignItems:"center",
+                  gap:4,
+                  flexShrink:0,
+                  boxShadow:"0 1px 4px rgba(0,0,0,0.03)"
+                }}
+              >
+                <span>{ct.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Hidden Date Picker triggered by "Pick from Calendar" */}
+          <input
+            type="date"
+            ref={chatDatePickerRef}
+            min={new Date().toISOString().split('T')[0]}
+            style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0, bottom: 0 }}
+            onChange={(e) => {
+              if (e.target.value) {
+                const parts = e.target.value.split('-');
+                if (parts.length === 3) {
+                  const fullMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                  const d = parseInt(parts[2], 10);
+                  const m = parseInt(parts[1], 10) - 1;
+                  const y = parts[0];
+                  const dateFormatted = `${d} ${fullMonths[m]} ${y}`;
+                  sendChat(`The event date is ${dateFormatted}`);
+                }
+              }
+            }}
+          />
+
           {/* Input */}
           <div style={{ display:"flex", alignItems:"center", gap:9, padding:"12px 14px", borderTop:"1px solid #ece2d2", background:"#fff" }}>
             <input

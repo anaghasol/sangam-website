@@ -18,9 +18,12 @@ import path from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 
 const ROOT = path.join(import.meta.dirname, '..')
-const env = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8')
-const G = k => (env.match(new RegExp(`^${k}=(.*)$`, 'm')) || [])[1]?.trim()
-const sb = createClient(G('NEXT_PUBLIC_SUPABASE_URL'), G('SUPABASE_SERVICE_ROLE_KEY'))
+const env = fs.existsSync(path.join(ROOT, '.env.local')) ? fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8') : ''
+const G = k => (env.match(new RegExp(`^${k}=(.*)$`, 'm')) || [])[1]?.trim() || process.env[k]
+const sbUrl = G('NEXT_PUBLIC_SUPABASE_URL') || G('VITE_SUPABASE_URL')
+const sbKey = G('SUPABASE_SERVICE_ROLE_KEY') || G('NEXT_PUBLIC_SUPABASE_ANON_KEY') || G('VITE_SUPABASE_ANON_KEY')
+const sbSchema = G('NEXT_PUBLIC_SUPABASE_SCHEMA') || G('VITE_SUPABASE_SCHEMA') || G('SUPABASE_SCHEMA')
+const sb = createClient(sbUrl, sbKey, sbSchema ? { db: { schema: sbSchema } } : undefined)
 
 const arg = k => (process.argv.find(a => a.startsWith(`--${k}=`)) || '').split('=')[1]
 const DETAIL_MONTHS = Number(arg('detail-months') || 12)

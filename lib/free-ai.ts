@@ -41,11 +41,11 @@ async function openaiStyle(
         // These APIs require the conversation to open with a user turn.
         ...msgs.filter((m, i) => !(i === 0 && m.role === 'assistant')),
       ],
-      max_tokens: 500,
-      temperature: 0.7,
+      max_tokens: 1000,
+      temperature: 0.6,
       ...extra,
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(20000),
   })
   const data = await res.json().catch(() => null)
   if (!data || data.error) {
@@ -59,7 +59,7 @@ const PROVIDERS: Provider[] = [
   {
     name: 'groq',
     keys: () => [process.env.GROQ_API_KEY],
-    models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'groq/compound', 'groq/compound-mini', 'allam-2-7b'],
+    models: ['openai/gpt-oss-120b', 'groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'groq/compound'],
     call: (k, m, s, msgs) => openaiStyle('https://api.groq.com/openai/v1/chat/completions', k, m, s, msgs),
   },
   {
