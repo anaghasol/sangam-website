@@ -123,6 +123,10 @@ export default function EmbedChatPage() {
     setMessages(next);
     setInput("");
     setLoading(true);
+    // Whatever quick-action chips were showing are now stale the moment a
+    // message goes out — clear them so nothing lingers through the loading
+    // state; the response brings its own fresh set.
+    setSuggestions([]);
 
     try {
       const res = await fetch("/api/chat", {

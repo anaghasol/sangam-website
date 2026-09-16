@@ -471,6 +471,10 @@ export default function SangamHotels() {
     setChatMessages(next);
     setChatInput('');
     setChatLoading(true);
+    // Whatever quick-action chips were showing are now stale the moment a
+    // message goes out (clicked, typed, or picked from the calendar) — clear
+    // them so nothing lingers through the loading state; the response brings its own.
+    setChatSuggestions([]);
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -503,6 +507,8 @@ export default function SangamHotels() {
           chatDatePickerRef.current.click();
         }
       }
+      // Not clearing suggestions here — opening the date picker doesn't send
+      // a message yet, so the same chip row should stay usable until it does.
     } else {
       sendChat(ct.text);
     }

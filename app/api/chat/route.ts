@@ -3,6 +3,7 @@ import { getSangamUnifiedKnowledgeContext } from '@/lib/sangam-knowledge'
 import { askFreeModels } from '@/lib/free-ai'
 import { lookupCustomerByPhone, extractPhoneNumber } from '@/lib/customer-lookup'
 import { calculateEffectiveGuests, generatePopularCateringQuote, extractCustomDishes } from '@/lib/catering-portions'
+import { getSangamCateringLiveData, getBranchIdByName } from '@/lib/sangam-catering'
 import { createClient } from '@supabase/supabase-js'
 
 const SYSTEM_PROMPT = `You are Arjun, the friendly Hospitality and Catering Manager at Sangam Hotels Hyderabad (By Sameeksha Hospitality).
@@ -16,34 +17,11 @@ ABOUT SANGAM HOTELS HYDERABAD:
 - Tiffin Outlets: Mansoorabad & Koyyalagudem
 - Contact & Bookings: +91 90638 44021 | info@sangamhotelshyderabad.com | WhatsApp: +91 90638 44021
 
-CATERING SERVICE TYPES & PRICING:
-1. INDOOR AC BANQUET HALLS (from eventmgmt.hall & eventmgmt.menu):
-   - PEERZADIGUDA FLAGSHIP HALLS:
-     * SANGAMAM Hall (4th Floor): 250–500 pax, Grand Banquet, Lifts, Valet Parking, Flat charge ₹30,000 / Full day ₹150,000 (Free hall if catering ≥ ₹200,000)
-     * ARANGAM Hall (3rd Floor): 100–150 pax, AC Banquet, Flat charge ₹20,000 / Full day ₹40,000 (Free hall if catering ≥ ₹100,000)
-     * MAGUDAM Hall (3rd Floor): 100–150 pax, AC Banquet, Flat charge ₹20,000 / Full day ₹40,000 (Free hall if catering ≥ ₹100,000)
-     * MADURAM Hall (1st Floor): 50–100 pax, AC Banquet, Flat charge ₹10,000 / Full day ₹20,000 (Free hall if catering ≥ ₹50,000)
-     * Classic Hall (Ground Floor): Up to 220 pax, AC Banquet, Flat charge ₹7,000 / Full day ₹18,000 (Free hall if catering ≥ ₹60,000)
-   - HAYATHNAGAR SANGAM HALL (2nd Floor): 50–200 pax, AC Banquet, Lifts, Valet Parking, Flat charge ₹20,000 / Full day ₹30,000 (Free hall if catering ≥ ₹50,000)
+CATERING SERVICE TYPES:
+1. INDOOR AC BANQUET HALLS — halls, hall pricing and menu packages (veg/non-veg/grand/platinum) are supplied below in the "REAL DATABASE CATERING & EVENT PRICING" block, sourced live from eventmgmt.hall and eventmgmt.menu.
+2. OUTDOOR CATERING & CUSTOM TRAYS — 100% custom menu & tray-based catering (no rigid package lock-in, delivered to customer's venue/home/office/farmhouse). Spread pricing is supplied below, sourced live from eventmgmt.menu. Tray capacities: Biryani/Rice 25-30 pax per full tray (≈5kg each), Starters 40-50 pax per full tray (100-120 pcs), Curries/Dals 35-45 pax per full tray, Live Breads 2.5 pcs per guest, Sweets & Desserts 35-40 pax per tray.
 
-   - STANDARD INDOOR MENU PACKAGES (eventmgmt.menu):
-     * Veg Menu: ₹600/plate (1 Welcome Drink, 2 Veg Starters, 2 Main Curries, 1 Dal, 1 Veg Biryani, 2 Breads, 2 Desserts)
-     * Grand Veg Menu: ₹700/plate (1 Welcome Drink, 3 Premium Veg Starters, 3 Main Curries, 1 Dal, 1 Special Biryani, 2 Breads, 3 Desserts)
-     * Non-Veg Menu: ₹800/plate (1 Welcome Drink, 2 Non-Veg Starters, 1 Veg Starter, 2 Non-Veg Curries, 1 Veg Curry, 1 Chicken Dum Biryani, 2 Breads, 2 Desserts)
-     * Grand Non-Veg Menu: ₹900/plate (1 Welcome Drink, 3 Non-Veg Starters, 2 Veg Starters, 3 Non-Veg Curries, 2 Veg Curries, Hyderabadi Chicken Dum Biryani, 2 Breads, 3 Desserts)
-     * Platinum Non-Veg Menu: ₹1,000/plate (Grand wedding spread with Mutton Dum Biryani, live counters, royal desserts)
-
-2. OUTDOOR CATERING & CUSTOM TRAYS:
-   - 100% custom menu & tray-based catering (no rigid package lock-in, delivered to customer's venue/home/office/farmhouse).
-   - Standard Spreads:
-     * Popular Veg Spread: ₹499/plate (Paneer 65, Veg Manchurian, Veg Dum Biryani, Paneer Butter Masala, Dal Tadka, Butter Naan & Pulka live, Sweets)
-     * Hyderabadi Non-Veg Spread: ₹649/plate (Chicken 65, Veg Manchurian, Hyderabadi Chicken Dum Biryani, Butter Chicken, Paneer Butter Masala, Live Naan & Pulkas, Sweets)
-   - Tray Capacities:
-     * Biryani/Rice: 25-30 pax per full tray (≈5kg each)
-     * Starters: 40-50 pax per full tray (100-120 pcs)
-     * Curries/Dals: 35-45 pax per full tray
-     * Live Breads: 2.5 pcs per guest (prepared live at site)
-     * Sweets & Desserts: 35-40 pax per tray
+PRICING RULE — NON-NEGOTIABLE: Every hall name, hall price, menu package name and per-plate price you state MUST come from the "REAL DATABASE CATERING & EVENT PRICING" block appended after this prompt. Never state a specific ₹ price, hall name or package name from memory or from an earlier turn in this conversation if it is not present in that block. If that block says live data is unavailable, say pricing will be confirmed by the catering manager at +91 90638 44021 — do not invent a number.
 
 OUTDOOR CATERING CONVERSATIONAL WORKFLOW (STEP-BY-STEP INTAKE & ESTIMATION):
 When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menus:
@@ -52,7 +30,7 @@ When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menu
    - Step 1: Occasion Name (e.g. Birthday Party, Housewarming / Gruhapravesam, Wedding / Reception, Corporate Event, Farmhouse Get-together)
    - Step 2: Event Date & Time (Event Date and Lunch / Dinner / Morning service time)
    - Step 3: Guest Count (Pax: 30, 50, 100, 150, 200+ guests)
-   - Step 4: Menu Items / Spread (Popular Veg Spread ₹499/plate, Hyderabadi Non-Veg Spread ₹649/plate, or custom dishes)
+   - Step 4: Menu Items / Spread (veg or non-veg standard spread — use the live prices from the block below — or custom dishes)
 3. Estimation Rule: The MAIN things needed for estimation are **Pax** and **Items/Menu**.
    - As soon as Pax and Items are provided (or if the customer already included them in their text), IMMEDIATELY generate and display the full Outdoor Catering Estimation!
    - Acknowledge Occasion, Date, and Time if provided.
@@ -87,12 +65,10 @@ Always acknowledge earlier details and ask ONLY for the NEXT missing detail in t
    • 🌿 Pure Veg
    • 🥗 Veg & Non-Veg
    • 🍗 Non-Veg"
-6. Menu Package: Once dietary preference is selected, present only the matching packages:
-   - If Pure Veg: Standard Veg Menu (₹600/plate) or Grand Veg Menu (₹700/plate).
-   - If Veg & Non-Veg / Non-Veg: Standard Non-Veg Menu (₹800/plate), Grand Non-Veg Menu (₹900/plate), or Platinum Non-Veg Menu (₹1,000/plate).
+6. Menu Package: Once dietary preference is selected, present only the matching packages (veg-only packages for Pure Veg; non-veg packages for Veg & Non-Veg / Non-Veg) using the exact names and prices from the live pricing block below — never fixed numbers from memory.
 7. Full Estimation & Dish Spread Breakdown: ONLY AFTER the customer selects their menu package, generate the full estimation:
-   - Matching AC Banquet Hall based on pax and branch (e.g. Maduram for 50–100 pax, Arangam/Magudam for 100–150 pax, Classic for up to 220 pax, Sangamam Grand for 250–500 pax).
-   - Pricing: Guest count × Plate rate = Total Catering Amount. (Mention hall fee is waived complimentary!).
+   - Matching AC Banquet Hall based on pax and branch, chosen from the live hall list below (not a guess).
+   - Pricing: Guest count × Plate rate (from the live block) = Total Catering Amount. Only say the hall fee is waived if the live data confirms the catering total meets that hall's free-hall threshold — otherwise say the hall fee will be confirmed.
    - Itemized Dish Spread organized by SECTION with "[✏️ Edit]" tag on each section header:
      ### 🍹 Welcome Drinks [✏️ Edit]
      • Fresh Mint Mojito / Welcome Juice
@@ -114,7 +90,7 @@ CUSTOM DISHES INTAKE RULE:
 - When a customer names specific dishes (e.g. Aloo Mutter Paneer, Bagara Baingan, Cabbage Pakoda, Dosakaya, Double Ka Meetha, Green Salad, Masala Vada, Palak Dal, Plain Curd, Pulihora, Sambar, Veg Pulao):
   1. Include ALL requested dishes in the categorized menu.
   2. For 20 pax, specify 1 Full Tray per dish (sufficient for 20-30 guests).
-  3. Estimate an all-inclusive rate (e.g. ₹450 - ₹550/plate for grand veg spreads, ₹600 - ₹750/plate for non-veg).
+  3. Base the all-inclusive rate on the closest live spread price from the block below, adjusted for dish count — never invent a rate that isn't grounded in that data.
   4. Never replace user dishes with generic defaults.
 
 STRICT RULES:
@@ -222,8 +198,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Fetch Unified Knowledge Context (RAG, PetPooja, Eventmgmt DB, Portion Rules)
-    const extraContext = await getSangamUnifiedKnowledgeContext(lastUserMsg)
+    // 3. Fetch Unified Knowledge Context (RAG, PetPooja, Eventmgmt DB, Portion Rules),
+    // the structured live catering data (real halls/menus/dishes), and the real
+    // branch_id for whichever branch has been mentioned so far — all in parallel.
+    const [extraContext, liveCateringData, resolvedBranchId] = await Promise.all([
+      getSangamUnifiedKnowledgeContext(lastUserMsg),
+      getSangamCateringLiveData(),
+      mentionedBranch ? getBranchIdByName(mentionedBranch) : Promise.resolve(null),
+    ])
+    const liveOutdoorPriceLine = liveCateringData.outdoorMenus.length > 0
+      ? liveCateringData.outdoorMenus.map(m => `₹${m.pricePerPax} ${m.dietaryType || ''}`.trim()).join(' / ')
+      : 'live pricing from the database context below'
+
+    // Once a branch is known, tell the AI exactly which active halls belong to
+    // it (filtered by branch_id) so it never offers a hall from another branch.
+    const branchHallsForPrompt = resolvedBranchId
+      ? liveCateringData.halls.filter(h => h.branchId === resolvedBranchId)
+      : []
+    const branchHallContext = mentionedBranch
+      ? (branchHallsForPrompt.length > 0
+          ? `\nHALLS AT ${mentionedBranch.toUpperCase()} (only offer halls from this list — this branch's active halls, filtered by branch_id and fitting the guest count where possible):\n${branchHallsForPrompt.map(h => h.text).join('\n')}`
+          : `\nNo active hall is on file in the database for ${mentionedBranch} branch specifically yet — do not name a specific hall for this branch; tell the guest availability will be confirmed by our catering manager at +91 90638 44021.`)
+      : ''
+
     const intakeStatusContext = isOutdoorFlow ? (
       `\nCURRENT INTAKE STATUS (OUTDOOR CATERING & LIVE FOOD SETUP):\n` +
       `• Service Type: Outdoor Catering / Live Food Setup at Customer's Venue (NEVER ask for banquet hall slots or branches!).\n` +
@@ -232,7 +229,7 @@ export async function POST(req: NextRequest) {
       `• Event Time: ${hasTimeDetected ? 'Already Provided' : 'Pending'}\n` +
       `• Guest Count (Pax): ${hasPaxDetected ? `${effectiveAdults} Guests` : 'Pending'}\n` +
       `• Menu / Items: ${hasOutdoorItemsDetected ? 'Selected' : 'Pending'}\n` +
-      `CRITICAL INSTRUCTION: If both Pax and Menu/Items are provided (or if user provided them upfront in text), IMMEDIATELY generate and display the full Outdoor Catering Quote with tray sizing (₹499 Veg / ₹649 Non-Veg), total amount, included services, and [✏️ Edit] dish sections! Otherwise, ask ONLY for the NEXT 'Pending' detail in this exact order: Occasion -> Date & Time -> Pax -> Menu/Items. Never ask for fields that are already provided!`
+      `CRITICAL INSTRUCTION: If both Pax and Menu/Items are provided (or if user provided them upfront in text), IMMEDIATELY generate and display the full Outdoor Catering Quote with tray sizing (${liveOutdoorPriceLine}), total amount, included services, and [✏️ Edit] dish sections! Otherwise, ask ONLY for the NEXT 'Pending' detail in this exact order: Occasion -> Date & Time -> Pax -> Menu/Items. Never ask for fields that are already provided!`
     ) : (
       `\nCURRENT INTAKE STATUS (INDOOR AC BANQUET HALLS):\n` +
       `• Branch: ${mentionedBranch || 'Not specified yet'}\n` +
@@ -248,6 +245,7 @@ export async function POST(req: NextRequest) {
       SYSTEM_PROMPT,
       customerContext,
       extraContext,
+      branchHallContext,
       intakeStatusContext
     ].filter(Boolean).join('\n\n')
 
@@ -268,7 +266,8 @@ export async function POST(req: NextRequest) {
             pax,
             isVeg,
             [],
-            lastUserMsg + ' ' + allUserText
+            lastUserMsg + ' ' + allUserText,
+            liveCateringData
           )
 
           const mult = loyaltyDiscount > 0 ? 0.95 : 1.0
@@ -297,7 +296,11 @@ export async function POST(req: NextRequest) {
           reply = "Got it! How many **Guests (Pax)** are you expecting for the catering? (e.g. 30, 50, 100, 150+ guests)"
         } else {
           // Items missing
-          reply = `Thank you! For ${effectiveAdults} guests, which catering menu spread or items would you prefer?\n\n• 🌿 **Popular Veg Spread** (₹499/plate) — Paneer 65, Veg Manchurian, Veg Dum Biryani, Paneer Butter Masala, Dal Tadka, Live Naan & Pulkas, Sweets\n• 🍗 **Hyderabadi Non-Veg Spread** (₹649/plate) — Chicken 65, Veg Manchurian, Hyderabadi Chicken Dum Biryani, Butter Chicken, Paneer Butter Masala, Live Naan & Pulkas, Sweets\n• 🍛 **Custom Dishes & Live Counters** (Build your custom menu)`
+          const vegOutdoor = liveCateringData.outdoorMenus.find(m => (m.dietaryType || '').toLowerCase().includes('veg') && !(m.dietaryType || '').toLowerCase().includes('non'))
+          const nonVegOutdoor = liveCateringData.outdoorMenus.find(m => !(m.dietaryType || '').toLowerCase().includes('veg') || (m.dietaryType || '').toLowerCase().includes('non'))
+          const vegLine = vegOutdoor ? `• 🌿 **${vegOutdoor.name}** (₹${vegOutdoor.pricePerPax}/plate)${vegOutdoor.description ? ` — ${vegOutdoor.description}` : ''}` : `• 🌿 **Popular Veg Spread** (pricing confirmed by our catering manager)`
+          const nonVegLine = nonVegOutdoor ? `• 🍗 **${nonVegOutdoor.name}** (₹${nonVegOutdoor.pricePerPax}/plate)${nonVegOutdoor.description ? ` — ${nonVegOutdoor.description}` : ''}` : `• 🍗 **Non-Veg Spread** (pricing confirmed by our catering manager)`
+          reply = `Thank you! For ${effectiveAdults} guests, which catering menu spread or items would you prefer?\n\n${vegLine}\n${nonVegLine}\n• 🍛 **Custom Dishes & Live Counters** (Build your custom menu)`
         }
       } else if (hasPackageDetected) {
         // Indoor Banquet Quote
@@ -307,7 +310,9 @@ export async function POST(req: NextRequest) {
           effectiveAdults,
           isVegOnly,
           [],
-          lastUserMsg + ' ' + allUserText
+          lastUserMsg + ' ' + allUserText,
+          liveCateringData,
+          resolvedBranchId
         )
 
         const mult = loyaltyDiscount > 0 ? 0.95 : 1.0
@@ -318,8 +323,7 @@ export async function POST(req: NextRequest) {
           `📋 **Menu Spread & Dishes Included**:\n` +
           `${quote.menuItems.join('\n\n')}\n\n` +
           `💰 **Estimation**: ₹${quote.pricePerPlate}/plate × ${effectiveAdults} Guests = **₹${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
-          `• **Banquet Amenities**: AC Banquet Hall, Stage, Audio/Mic Setup & Dedicated Banquet Staff Included!\n` +
-          `• **Hall Fee Status**: Complimentary / Waived with catering package!\n\n` +
+          `${quote.trayBreakdown.join('\n')}\n\n` +
           `You can tap **[✏️ Edit]** on any section above or use the quick action chips below to customize dishes, or share your WhatsApp number to save this 10-day quote!`
       } else if (!hasDateDetected && !hasBranchDetected && !hasSlotDetected && !hasPaxDetected) {
         reply = "Namaste! 🙏 I'm Arjun, hospitality and catering manager at Sangam Hotels Hyderabad. Which branch do you prefer for your banquet event — **Peerzadiguda Flagship** or **Hayathnagar**?"
@@ -332,10 +336,17 @@ export async function POST(req: NextRequest) {
       } else if (!lastDietaryDetected) {
         reply = "Thank you! What is your **Dietary Preference** for the event menu?\n\n• 🌿 **Pure Veg**\n• 🥗 **Veg & Non-Veg**\n• 🍗 **Non-Veg**"
       } else {
+        const fmtMenu = (m: typeof liveCateringData.indoorMenus[number]) => `• 🍽️ **${m.name}** (₹${m.pricePerPax}/plate)${m.description ? ` — ${m.description}` : ''}`
         if (lastDietaryDetected === 'veg') {
-          reply = "Here are our available **Pure Veg Banquet Packages**:\n\n• 🌱 **Standard Veg Menu** (₹600/plate) — 1 Welcome Drink, 2 Veg Starters, 2 Main Curries, Dal, Veg Biryani, 2 Breads, 2 Desserts\n• 👑 **Grand Veg Menu** (₹700/plate) — 1 Welcome Drink, 4 Premium Starters, 3 Curries, Dal, Special Biryani, 3 Breads, 3 Desserts\n\nPlease select which menu package you'd like an estimation for!"
+          const vegMenus = liveCateringData.indoorMenus.filter(m => (m.dietaryType || '').toLowerCase().includes('veg') && !(m.dietaryType || '').toLowerCase().includes('non'))
+          reply = vegMenus.length > 0
+            ? `Here are our available **Pure Veg Banquet Packages**:\n\n${vegMenus.map(fmtMenu).join('\n')}\n\nPlease select which menu package you'd like an estimation for!`
+            : "Our Pure Veg Banquet Packages are being confirmed by our catering manager right now — please call +91 90638 44021 for current pricing, or tell me your guest count and I'll follow up with an estimate."
         } else {
-          reply = "Here are our available **Non-Veg Banquet Packages**:\n\n• 🍗 **Standard Non-Veg Menu** (₹800/plate) — 1 Welcome Drink, 3 Starters, 3 Curries, Chicken Dum Biryani + Veg Biryani, Breads, 2 Desserts\n• 🌟 **Grand Non-Veg Menu** (₹900/plate) — 1 Welcome Drink, 4 Starters (Fish/Chicken/Veg), 4 Curries (Mutton/Chicken/Veg), Biryani, Breads, 3 Desserts\n• 💎 **Platinum Non-Veg Menu** (₹1,000/plate) — Royal Feast with Mutton Dum Biryani, Mutton Seekh Kebab, Tandoori Prawns & Live counters\n\nPlease select which menu package you'd like an estimation for!"
+          const nonVegMenus = liveCateringData.indoorMenus.filter(m => !(m.dietaryType || '').toLowerCase().includes('veg') || (m.dietaryType || '').toLowerCase().includes('non'))
+          reply = nonVegMenus.length > 0
+            ? `Here are our available **Non-Veg Banquet Packages**:\n\n${nonVegMenus.map(fmtMenu).join('\n')}\n\nPlease select which menu package you'd like an estimation for!`
+            : "Our Non-Veg Banquet Packages are being confirmed by our catering manager right now — please call +91 90638 44021 for current pricing, or tell me your guest count and I'll follow up with an estimate."
         }
       }
     }
@@ -374,7 +385,27 @@ export async function POST(req: NextRequest) {
         // Extract total amount if mentioned
         const totalMatch = (reply + ' ' + allUserText).match(/(?:Grand Total|Total|Amount|₹)\s*[:=–-]?\s*₹?\s*([\d,]+)/i)
         const parsedTotal = totalMatch ? parseInt(totalMatch[1].replace(/,/g, ''), 10) : 0
-        const calculatedTotal = parsedTotal > 0 ? parsedTotal : Math.round(((isIndoor ? (isVegOnly ? 600 : 800) : 450) * (effectiveAdults || 20)) * (loyaltyDiscount > 0 ? 0.95 : 1))
+        // Fallback plate rate, only used if no total could be parsed from the
+        // conversation: prefer the nearest real live price (matching diet)
+        // over a hardcoded guess.
+        const liveMenuPool = isIndoor ? liveCateringData.indoorMenus : liveCateringData.outdoorMenus
+        const dietMatchedLive = liveMenuPool.filter(m => {
+          const dt = (m.dietaryType || '').toLowerCase()
+          const isVegRow = dt.includes('veg') && !dt.includes('non')
+          return isVegOnly ? isVegRow : true
+        })
+        const fallbackPlateRate = (dietMatchedLive[0] || liveMenuPool[0])?.pricePerPax
+          ?? (isIndoor ? (isVegOnly ? 600 : 800) : 450)
+        const calculatedTotal = parsedTotal > 0 ? parsedTotal : Math.round(fallbackPlateRate * (effectiveAdults || 20) * (loyaltyDiscount > 0 ? 0.95 : 1))
+
+        // Real branch_id — already resolved above (step 3) for the hall/menu
+        // lookup, reused here so a booking is never silently lost. Falls back
+        // to the flagship UUID only if the lookup failed, and that's logged
+        // so a wrong fallback is visible, not silent.
+        if (mentionedBranch && !resolvedBranchId) {
+          console.warn(`[Quote Save] Could not resolve branch_id for "${mentionedBranch}" from the branches table — using fallback UUID. Verify the branches table/column names.`)
+        }
+        const branchId = resolvedBranchId || '6215d413-e566-44a8-b8fd-f2b2d5a90e98'
 
         const client = sbEvent()
 
@@ -382,7 +413,7 @@ export async function POST(req: NextRequest) {
           const { data: savedBooking, error: insErr } = await client
             .from('booking')
             .insert({
-              branch_id: mentionedBranch === 'Peerzadiguda' ? '6215d413-e566-44a8-b8fd-f2b2d5a90e98' : '6215d413-e566-44a8-b8fd-f2b2d5a90e98',
+              branch_id: branchId,
               service_type: isIndoor ? 'inhouse' : 'outdoor',
               event_date: targetDate,
               pax: effectiveAdults || 20,

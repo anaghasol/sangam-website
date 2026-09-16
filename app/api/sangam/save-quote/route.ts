@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getBranchIdByName } from '@/lib/sangam-catering'
+
+// NOTE: nothing in app/page.tsx or app/embed/chat/page.tsx currently calls
+// this route — the chat's own [SAVE_QUOTE:...] handling in app/api/chat/route.ts
+// is what actually persists bookings today. Kept working/consistent in case
+// a client is wired up to call it directly.
 
 function sbEvent() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL
@@ -10,7 +16,7 @@ function sbEvent() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { whatsappPhone, customerName, guestCount, serviceType, eventDate, dishNames, subtotal } = await req.json()
+    const { whatsappPhone, customerName, guestCount, serviceType, eventDate, dishNames, subtotal, branch } = await req.json()
 
     if (!whatsappPhone) {
       return NextResponse.json({ error: 'WhatsApp phone is required' }, { status: 400 })
@@ -23,6 +29,14 @@ export async function POST(req: NextRequest) {
       ? eventDate
       : new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
 
+    // Real branch_id looked up by name; falls back to the flagship UUID only
+    // if no branch was given or the lookup fails (never silently drops the booking).
+    const resolvedBranchId = branch ? await getBranchIdByName(String(branch)) : null
+    if (branch && !resolvedBranchId) {
+      console.warn(`[save-quote] Could not resolve branch_id for "${branch}" — using fallback UUID.`)
+    }
+    const branchId = resolvedBranchId || '6215d413-e566-44a8-b8fd-f2b2d5a90e98'
+
     const client = sbEvent()
     let savedBooking = null
 
@@ -30,7 +44,7 @@ export async function POST(req: NextRequest) {
       const { data, error } = await client
         .from('booking')
         .insert({
-          branch_id: '6215d413-e566-44a8-b8fd-f2b2d5a90e98', // Hayathnagar / Flagship
+          branch_id: branchId,
           service_type: (serviceType || 'outdoor').toLowerCase().includes('inhouse') || (serviceType || '').toLowerCase().includes('indoor') ? 'inhouse' : 'outdoor',
           event_date: targetDate,
           pax: guestCount || 50,
