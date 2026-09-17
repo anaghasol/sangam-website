@@ -32,6 +32,7 @@ When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menu
    - Step 2: Event Date & Time (Event Date and Lunch / Dinner / Morning service time)
    - Step 3: Guest Count (Pax: 30, 50, 100, 150, 200+ guests)
    - Step 4: Menu Items / Spread (veg or non-veg standard spread — use the live prices from the block below — or custom dishes)
+   - Step 5: Delivery Address (full address/venue where the food must be delivered/set up), Customer Name, and Phone/WhatsApp Number — these are MANDATORY before the booking can be confirmed/saved (see MANDATORY CUSTOMER DETAILS section below), but do NOT block the estimation itself — show the estimation first, then ask for these to lock in the booking.
 3. Estimation Rule: The MAIN things needed for estimation are **Pax** and **Items/Menu**.
    - As soon as Pax and Items are provided (or if the customer already included them in their text), IMMEDIATELY generate and display the full Outdoor Catering Estimation!
    - Acknowledge Occasion, Date, and Time if provided.
@@ -84,6 +85,12 @@ CUSTOM DISHES INTAKE RULE:
   3. Base the all-inclusive rate on the closest live spread price from the block below, adjusted for dish count — never invent a rate that isn't grounded in that data.
   4. Never replace user dishes with generic defaults.
 
+MANDATORY CUSTOMER DETAILS BEFORE CONFIRMING A BOOKING:
+- INDOOR bookings: **Phone/WhatsApp number is mandatory** before you can save/confirm the quote. Name is nice-to-have but not blocking. After showing the full estimation, ask: "Could you share your phone/WhatsApp number so I can lock in this 10-day quote for you?" if it hasn't been given yet.
+- OUTDOOR bookings: **Name, full delivery Address, and Phone/WhatsApp number are all mandatory** before you can save/confirm the quote (there is no banquet hall to anchor the booking to, so we need to know who and where). After showing the full estimation, ask for whichever of these three is still missing, e.g.: "To confirm this outdoor catering booking, could you share your name, the delivery address/venue, and your phone/WhatsApp number?"
+- Never fabricate or assume a name, address, or phone number — only use what the customer actually typed.
+- ADVANCE PAYMENT: once phone (indoor) or name+address+phone (outdoor) are known, ask if they'd like to pay an advance to confirm/hold the booking, e.g.: "Would you like to pay an advance now to confirm this booking? We accept any advance amount — just let me know how much you'd like to pay." If the customer states an advance amount (e.g. "I'll pay ₹5000 advance"), acknowledge it clearly in your reply restating the exact amount (e.g. "Noting your ₹5,000 advance payment") so it can be recorded — never invent or round an advance amount they didn't state.
+
 STRICT RULES:
 - Quote REAL prices from the database context provided.
 - 5% returning customer discount is applicable for verified customer phone numbers.
@@ -97,6 +104,44 @@ function sbEvent() {
   return createClient(url, key, { db: { schema: 'eventmgmt' } })
 }
 
+// Draft quotes generated in chat live in sangam.quotes (separate schema from
+// eventmgmt) — a lightweight, always-on record of "a quote was shown to this
+// customer", independent of whether they ever confirm a real booking.
+function sbSangam() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  if (!url || !key) return null
+  return createClient(url, key, { db: { schema: 'sangam' } })
+}
+
+/**
+ * Extracts a plain-text delivery address from a message, for outdoor
+ * catering bookings. Looks for an explicit "address is / deliver to /
+ * venue is" phrase first, and falls back to a line containing a 6-digit
+ * Indian PIN code (a strong signal the text is an address). Never invents
+ * an address — returns null when nothing matches.
+ */
+function extractAddress(text: string): string | null {
+  if (!text) return null
+  const phraseMatch = text.match(/(?:delivery address|address is|deliver(?:y)?\s*(?:to|at)|venue is|venue address|location is)\s*[:\-]?\s*([^\n]{8,150})/i)
+  if (phraseMatch) return phraseMatch[1].trim().replace(/[.\s]+$/, '')
+  const pinLineMatch = text.match(/^[^\n]*\b\d{6}\b[^\n]*$/m)
+  if (pinLineMatch) return pinLineMatch[0].trim()
+  return null
+}
+
+/**
+ * Extracts a customer's stated name from free text (e.g. "my name is Ravi",
+ * "this is Ravi speaking", "I am Ravi"). Only used as a fallback when the
+ * phone-lookup didn't already resolve a name for a returning customer.
+ * Never invents a name.
+ */
+function extractCustomerName(text: string): string | null {
+  if (!text) return null
+  const m = text.match(/(?:my name is|this is|i am|i'm|\bname\s*(?:is|:|-)?\s*)\s*([A-Z][a-zA-Z]{1,30}(?:\s+[A-Z][a-zA-Z]{1,30}){0,2})\b/i)
+  return m ? m[1].trim() : null
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { messages } = await req.json()
@@ -106,8 +151,21 @@ export async function POST(req: NextRequest) {
     const allUserText = recentMsgs.filter(m => m.role === 'user').map(m => m.content).join(' ')
     const lowerAllText = allUserText.toLowerCase()
 
-    // 1. Extract guest count from entire conversation or fallback
-    const numMatch = lastUserMsg.match(/\b(?:pax\s*)?(\d{2,4})\b/i) || allUserText.match(/\b(?:pax\s*)?(\d{2,4})\b/i)
+    // 1. Extract guest count from entire conversation or fallback.
+    // Strip date-shaped number sequences first ("25 December 2026", "20th
+    // November", "10/12/2026", a bare "2026"/"2027" year) so a date's day-
+    // of-month or year never gets misread as the guest count — e.g. without
+    // this, "The event date is 20th November 2026" would set pax to 20 and
+    // silently skip the real "how many guests" question later in the flow.
+    const stripDateNumbers = (text: string): string => {
+      if (!text) return text
+      return text
+        .replace(/\b\d{1,2}\s*(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*,?\s*\d{0,4}\b/gi, ' ')
+        .replace(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{0,4}\b/gi, ' ')
+        .replace(/\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b/g, ' ')
+        .replace(/\b20[2-3]\d\b/g, ' ')
+    }
+    const numMatch = stripDateNumbers(lastUserMsg).match(/\b(?:pax\s*)?(\d{2,4})\b/i) || stripDateNumbers(allUserText).match(/\b(?:pax\s*)?(\d{2,4})\b/i)
     const rawCount = numMatch ? parseInt(numMatch[1], 10) : 0
     const kidsMatch = allUserText.match(/(\d+)\s*(?:kids|children)/i)
     const adultsMatch = allUserText.match(/(\d+)\s*(?:adults|people|guests|persons|pax)/i)
@@ -187,6 +245,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Delivery address — only meaningful for outdoor bookings, but detect
+    // across the whole conversation regardless (harmless for indoor).
+    let detectedAddress: string | null = null
+    for (let i = recentMsgs.length - 1; i >= 0; i--) {
+      if (recentMsgs[i].role === 'user') {
+        const a = extractAddress(recentMsgs[i].content)
+        if (a) {
+          detectedAddress = a
+          break
+        }
+      }
+    }
+
     let loyaltyDiscount = 0
     let customerName: string | null = null
 
@@ -208,6 +279,11 @@ export async function POST(req: NextRequest) {
         const tagsLine = profile.tags.length > 0 ? `\n• Tags on file: ${profile.tags.join(', ')}` : ''
         customerContext = `\nCUSTOMER RECOGNITION (VERIFIED RETURNING CUSTOMER):\n• Name: ${profile.name || 'Valued Guest'}\n• Phone: ${profile.phone}\n• Total Past Retail Orders: ${profile.orderCount}\n• Loyalty Discount: 5% Applicable on food total!${favs}${cateringLine}${tagsLine}\nInstruction: Greet the customer warmly by name and apply their 5% loyalty discount in quotes!`
       }
+    }
+    // New (non-returning) customer — the phone lookup won't have a name on
+    // file, so fall back to whatever the customer actually typed themselves.
+    if (!customerName) {
+      customerName = extractCustomerName(allUserText)
     }
 
     // 3. Fetch Unified Knowledge Context (RAG, PetPooja, Eventmgmt DB, Portion Rules),
@@ -274,6 +350,29 @@ export async function POST(req: NextRequest) {
     // 4. Query AI Providers Cascade
     let reply = await askFreeModels(systemPrompt, recentMsgs)
 
+    // Precomputed CTA lines for the deterministic fallback below (step 5).
+    // Unlike the AI-driven reply (which reads the mandatory-details rules
+    // straight from SYSTEM_PROMPT), this scripted fallback only fires when
+    // every free AI provider is unavailable/rate-limited, so it needs its
+    // own state-aware ask: don't re-ask for details already given, and
+    // acknowledge once the customer has confirmed.
+    const fallbackHasConfirmKeyword = /\b(?:yes,?\s*)?(?:please\s+)?confirm(?:ed)?\b|\bgo ahead\b|\bproceed\b|\bbook it\b|\block (?:it|this) in\b/i.test(allUserText)
+    const fallbackAdvanceStated = /advance/i.test(allUserText) && /\d/.test(allUserText)
+    const outdoorMissingParts: string[] = []
+    if (!customerName) outdoorMissingParts.push('**name**')
+    if (!detectedAddress) outdoorMissingParts.push('**delivery address**')
+    if (!detectedPhone) outdoorMissingParts.push('**phone/WhatsApp number**')
+    const outdoorConfirmCta = outdoorMissingParts.length > 0
+      ? `📌 **To confirm this booking**, please share your ${outdoorMissingParts.join(', ')} — ${outdoorMissingParts.length > 1 ? 'these are' : 'this is'} needed to lock in this 10-day quote. If you'd like to pay an advance now to hold the booking, just let me know the amount!`
+      : (fallbackHasConfirmKeyword || fallbackAdvanceStated)
+        ? `✅ Thank you${customerName ? `, ${customerName}` : ''}! Your outdoor catering booking is confirmed and being saved${fallbackAdvanceStated ? ', and your advance payment has been noted' : ''}. Our catering manager will reach out on ${detectedPhone} to finalize the remaining details.`
+        : `Your name, delivery address, and phone/WhatsApp number are all on file. Reply **"confirm"** to lock in this booking, or let me know if you'd like to pay an advance to hold your slot.`
+    const indoorConfirmCta = !detectedPhone
+      ? `📌 **To confirm this booking**, please share your **phone/WhatsApp number** (mandatory) to lock in this 10-day quote. If you'd like to pay an advance now to hold the booking, just let me know the amount!`
+      : (fallbackHasConfirmKeyword || fallbackAdvanceStated)
+        ? `✅ Thank you${customerName ? `, ${customerName}` : ''}! Your indoor banquet booking is confirmed and being saved${fallbackAdvanceStated ? ', and your advance payment has been noted' : ''}. Our catering manager will reach out on ${detectedPhone} to finalize the remaining details.`
+        : `Your phone/WhatsApp number is on file. Reply **"confirm"** to lock in this booking, or let me know if you'd like to pay an advance to hold your slot.`
+
     // 5. Smart Fallback if AI providers rate-limit
     if (!reply) {
       if (isOutdoorFlow) {
@@ -307,7 +406,7 @@ export async function POST(req: NextRequest) {
             `• Live Tandoor & Roti preparation counter on site\n` +
             `• Dedicated uniform serving staff\n` +
             `• Premium disposable plates, cutlery & napkins\n\n` +
-            `You can tap **[✏️ Edit]** on any section above to customize dishes, or share your WhatsApp number to lock in this 10-day quote!`
+            `You can tap **[✏️ Edit]** on any section above to customize dishes.\n\n${outdoorConfirmCta}`
         } else if (!hasOccasionDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
           reply = "Namaste! 🙏 I'm Arjun, hospitality and catering manager at Sangam Hotels Hyderabad. What **Occasion** are you planning outdoor catering for? (e.g. Birthday Party, Housewarming, Wedding, Corporate Event)"
         } else if (!hasDateDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
@@ -346,7 +445,7 @@ export async function POST(req: NextRequest) {
           `${quote.menuItems.join('\n\n')}\n\n` +
           `💰 **Estimation**: ₹${quote.pricePerPlate}/plate × ${effectiveAdults} Guests = **₹${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
           `${quote.trayBreakdown.join('\n')}\n\n` +
-          `You can tap **[✏️ Edit]** on any section above or use the quick action chips below to customize dishes, or share your WhatsApp number to save this 10-day quote!`
+          `You can tap **[✏️ Edit]** on any section above or use the quick action chips below to customize dishes.\n\n${indoorConfirmCta}`
       } else if (!hasDateDetected && !hasBranchDetected && !hasSlotDetected && !hasPaxDetected) {
         reply = "Namaste! 🙏 I'm Arjun, hospitality and catering manager at Sangam Hotels Hyderabad. Which branch do you prefer for your banquet event — **Peerzadiguda Flagship** or **Hayathnagar**?"
       } else if (!hasDateDetected) {
@@ -373,17 +472,56 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6. Action Parser: Save Quote Draft to `eventmgmt.booking`
+    // 6. Action Parser: Draft quote → sangam.quotes, then (only once the
+    // customer actually confirms) the real booking → eventmgmt tables.
+    //
+    // Two-stage save, per the confirmed design:
+    //   Stage 1 (DRAFT): as soon as we have a phone number and something
+    //   quote-like is happening, upsert a lightweight row into
+    //   `sangam.quotes` (status: 'active'). This is the record of "a quote
+    //   was generated in chat" — cheap, always-on, no mandatory-details gate.
+    //   Stage 2 (CONFIRMED): only when the customer explicitly confirms the
+    //   booking (or pays an advance) AND the mandatory details for that
+    //   service type are present, we write the real relational rows into
+    //   `eventmgmt.booking` / `booking_customer` / `booking_outdoor_details`
+    //   / `booking_payment`, and flip the `sangam.quotes` row to 'confirmed'.
+    // Every write below is an INSERT or, for the quotes draft row only, an
+    // UPSERT keyed on the unique quote_number — never a DELETE.
     const saveTagMatch = reply.match(/\[SAVE_QUOTE:([^\]]+)\]/i)
     let targetPhone = detectedPhone
+    let targetAddress = detectedAddress
 
     if (saveTagMatch) {
       const tagContent = saveTagMatch[1]
       const phoneMatch = tagContent.match(/whatsapp=([^|\]]+)/i)
       if (phoneMatch) targetPhone = phoneMatch[1].trim()
+      const addressMatch = tagContent.match(/address=([^|\]]+)/i)
+      if (addressMatch) targetAddress = addressMatch[1].trim()
     }
 
-    if (targetPhone && (saveTagMatch || /save|quote|hold|book|confirm|advance|phone|whatsapp|\d{10}/i.test(allUserText) || /reference\s*id|confirmed|tentatively booked/i.test(reply))) {
+    // Mandatory-details gate for a CONFIRMED booking (per business rule):
+    // indoor bookings only need a verified phone/WhatsApp number; outdoor
+    // bookings additionally need the customer's name and a delivery address,
+    // since there's no banquet hall to anchor the booking to. This does NOT
+    // gate the draft quote save — a draft only needs the phone number.
+    const mandatoryDetailsPresent = isIndoor
+      ? !!targetPhone
+      : !!(targetPhone && customerName && targetAddress)
+
+    const looksLikeQuoteMoment = !!(saveTagMatch || /save|quote|hold|book|confirm|advance|phone|whatsapp|\d{10}/i.test(allUserText) || /reference\s*id|confirmed|tentatively booked/i.test(reply))
+
+    // Explicit confirmation signal — distinct from merely mentioning "book"
+    // or "quote" while still browsing. An advance payment is also treated as
+    // confirmation (paying to hold a slot is a clear intent to proceed).
+    const advanceMatchEarly = (reply + ' ' + allUserText).match(/advance\s*(?:payment|amount|of|paid)?\s*[:\-]?\s*₹?\s*([\d,]+)/i)
+    const advanceAmountEarly = advanceMatchEarly ? parseInt(advanceMatchEarly[1].replace(/,/g, ''), 10) : 0
+    const isExplicitConfirmation = !!(
+      advanceAmountEarly > 0 ||
+      /\b(?:yes,?\s*)?(?:please\s+)?confirm(?:ed)?\b|\bgo ahead\b|\bproceed\b|\bbook it\b|\block (?:it|this) in\b|\btentatively booked\b/i.test(allUserText) ||
+      /confirmed|tentatively booked/i.test(reply)
+    )
+
+    if (targetPhone && looksLikeQuoteMoment) {
       try {
         const codeMatch = reply.match(/SGM-?[A-Z0-9]{4,6}/i) || allUserText.match(/SGM-?[A-Z0-9]{4,6}/i)
         let quoteNumber = codeMatch ? codeMatch[0].toUpperCase() : `SGM-${Math.floor(1000 + Math.random() * 9000)}`
@@ -392,7 +530,7 @@ export async function POST(req: NextRequest) {
         }
 
         const validUntil = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString()
-        
+
         // Extract date if mentioned or default to 7 days ahead
         let targetDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
         const dateMatch = (reply + ' ' + allUserText).match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{4})/i)
@@ -420,55 +558,165 @@ export async function POST(req: NextRequest) {
           ?? (isIndoor ? (isVegOnly ? 600 : 800) : 450)
         const calculatedTotal = parsedTotal > 0 ? parsedTotal : Math.round(fallbackPlateRate * (effectiveAdults || 20) * (loyaltyDiscount > 0 ? 0.95 : 1))
 
-        // Real branch_id — already resolved above (step 3) for the hall/menu
-        // lookup, reused here so a booking is never silently lost. Falls back
-        // to the flagship UUID only if the lookup failed, and that's logged
-        // so a wrong fallback is visible, not silent.
-        if (mentionedBranch && !resolvedBranchId) {
-          console.warn(`[Quote Save] Could not resolve branch_id for "${mentionedBranch}" from the branches table — using fallback UUID. Verify the branches table/column names.`)
-        }
-        const branchId = resolvedBranchId || '6215d413-e566-44a8-b8fd-f2b2d5a90e98'
-
-        const client = sbEvent()
-
-        if (client) {
-          const { data: savedBooking, error: insErr } = await client
-            .from('booking')
-            .insert({
-              branch_id: branchId,
-              service_type: isIndoor ? 'inhouse' : 'outdoor',
+        // ── Stage 1: always upsert the lightweight draft into sangam.quotes ──
+        const sangamClient = sbSangam()
+        if (sangamClient) {
+          const { error: quoteErr } = await sangamClient
+            .from('quotes')
+            .upsert({
+              quote_number: quoteNumber,
+              whatsapp_phone: targetPhone,
+              guest_count: effectiveAdults || 20,
+              event_type: isIndoor ? 'Indoor Banquet Catering' : 'Outdoor Custom Catering',
               event_date: targetDate,
-              pax: effectiveAdults || 20,
-              status: 'draft',
-              booking_code: quoteNumber,
+              dishes: lastUserMsg.slice(0, 500),
               total_amount: calculatedTotal,
-              amount_paid: 0,
-              payment_status: 'unpaid',
-              catering_contacts: {
-                whatsapp_phone: targetPhone,
-                customer_name: customerName || 'Valued Guest',
-                source: 'ai_chatbot',
-                valid_until: validUntil,
-                branch: mentionedBranch || 'Hayathnagar / Peerzadiguda'
-              },
-              menu_selection: {
-                service: isIndoor ? 'Indoor Banquet Catering' : 'Outdoor Custom Catering',
-                custom_notes: lastUserMsg.slice(0, 300),
-                guest_count: effectiveAdults || 20
-              }
-            })
-            .select()
-            .single()
+              valid_until: validUntil,
+              status: 'active',
+            }, { onConflict: 'quote_number' })
+          if (quoteErr) console.warn('[Quote Draft] sangam.quotes upsert failed (non-fatal):', quoteErr.message)
+          else console.log(`[Quote Draft] Quote #${quoteNumber} saved to sangam.quotes (draft)`)
+        }
 
-          if (!insErr && savedBooking) {
-            console.log(`[Quote Saved] Quote #${quoteNumber} successfully persisted into eventmgmt.booking!`)
+        // ── Stage 2: only on explicit confirmation + mandatory details, ──
+        // ── write the real booking into eventmgmt and flip the draft.    ──
+        if (isExplicitConfirmation && mandatoryDetailsPresent) {
+          // Real branch_id — already resolved above (step 3) for the hall/menu
+          // lookup, reused here so a booking is never silently lost. Falls back
+          // to the flagship UUID only if the lookup failed, and that's logged
+          // so a wrong fallback is visible, not silent.
+          if (mentionedBranch && !resolvedBranchId) {
+            console.warn(`[Quote Save] Could not resolve branch_id for "${mentionedBranch}" from the branches table — using fallback UUID. Verify the branches table/column names.`)
+          }
+          const branchId = resolvedBranchId || '6215d413-e566-44a8-b8fd-f2b2d5a90e98'
+
+          const client = sbEvent()
+
+          if (client) {
+            // Idempotency guard: allUserText is cumulative across the whole
+            // conversation, so once the customer has confirmed, EVERY later
+            // message would still satisfy isExplicitConfirmation and
+            // mandatoryDetailsPresent and would otherwise re-insert a brand
+            // new duplicate booking (+ customer + outdoor details + advance
+            // payment) on every single turn. Check for an existing, non-
+            // cancelled booking for this exact phone + event date + service
+            // type first, and skip the insert entirely if one already exists.
+            const { data: existingBooking } = await client
+              .from('booking')
+              .select('id, booking_code')
+              .eq('service_type', isIndoor ? 'inhouse' : 'outdoor')
+              .eq('event_date', targetDate)
+              .contains('catering_contacts', { whatsapp_phone: targetPhone })
+              .neq('status', 'cancelled')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            if (existingBooking) {
+              console.log(`[Quote Save] Booking already exists for this phone+date+service (${existingBooking.booking_code}) — skipping duplicate insert.`)
+            } else {
+            const { data: savedBooking, error: insErr } = await client
+              .from('booking')
+              .insert({
+                branch_id: branchId,
+                service_type: isIndoor ? 'inhouse' : 'outdoor',
+                event_date: targetDate,
+                pax: effectiveAdults || 20,
+                status: 'draft',
+                booking_code: quoteNumber,
+                total_amount: calculatedTotal,
+                amount_paid: 0,
+                payment_status: 'unpaid',
+                catering_contacts: {
+                  whatsapp_phone: targetPhone,
+                  customer_name: customerName || 'Valued Guest',
+                  source: 'ai_chatbot',
+                  valid_until: validUntil,
+                  branch: mentionedBranch || 'Hayathnagar / Peerzadiguda'
+                },
+                menu_selection: {
+                  service: isIndoor ? 'Indoor Banquet Catering' : 'Outdoor Custom Catering',
+                  custom_notes: lastUserMsg.slice(0, 300),
+                  guest_count: effectiveAdults || 20
+                }
+              })
+              .select()
+              .single()
+
+            if (!insErr && savedBooking) {
+              console.log(`[Quote Confirmed] Quote #${quoteNumber} successfully persisted into eventmgmt.booking!`)
+
+              // Save the real customer contact into booking_customer (in
+              // addition to the catering_contacts JSONB above) so it shows up
+              // in the relational customer/booking tables the staff dashboard
+              // actually reads, not just as free-form JSON on the booking row.
+              try {
+                const { error: custErr } = await client.from('booking_customer').insert({
+                  booking_id: savedBooking.id,
+                  customer_name: customerName || 'Valued Guest',
+                  phone: targetPhone,
+                  whatsapp: targetPhone,
+                })
+                if (custErr) console.warn('[Quote Save] booking_customer insert failed (non-fatal):', custErr.message)
+              } catch (custEx) {
+                console.warn('[Quote Save] booking_customer insert threw (non-fatal):', custEx)
+              }
+
+              // Outdoor bookings: persist the delivery address into
+              // booking_outdoor_details — this is the mandatory address field
+              // the customer supplied, now attached to the real booking row.
+              if (!isIndoor && targetAddress) {
+                try {
+                  const { error: outdoorErr } = await client.from('booking_outdoor_details').insert({
+                    booking_id: savedBooking.id,
+                    address_label: targetAddress,
+                    delivery_type: 'delivery',
+                  })
+                  if (outdoorErr) console.warn('[Quote Save] booking_outdoor_details insert failed (non-fatal):', outdoorErr.message)
+                } catch (outdoorEx) {
+                  console.warn('[Quote Save] booking_outdoor_details insert threw (non-fatal):', outdoorEx)
+                }
+              }
+
+              // Advance payment: if the customer stated an amount they want to
+              // pay now to hold/confirm the booking, record it as a real
+              // booking_payment row (payment_type: 'advance'). This is an
+              // INSERT only — eventmgmt's own sync_booking_payment_totals
+              // trigger recalculates booking.amount_paid/payment_status from
+              // it; we never touch those columns ourselves.
+              if (advanceAmountEarly > 0 && advanceAmountEarly <= calculatedTotal) {
+                try {
+                  const { error: payErr } = await client.from('booking_payment').insert({
+                    booking_id: savedBooking.id,
+                    amount: advanceAmountEarly,
+                    payment_type: 'advance',
+                    status: 'success',
+                  })
+                  if (payErr) console.warn('[Quote Save] booking_payment (advance) insert failed (non-fatal):', payErr.message)
+                  else console.log(`[Quote Saved] Advance payment of ₹${advanceAmountEarly} recorded for booking ${savedBooking.id}`)
+                } catch (payEx) {
+                  console.warn('[Quote Save] booking_payment insert threw (non-fatal):', payEx)
+                }
+              }
+
+              // Flip the draft quote row to 'confirmed' — an UPDATE (not a
+              // delete) on the row we own, marking it converted into a real
+              // booking. sangam.quotes stays the audit trail either way.
+              if (sangamClient) {
+                const { error: statusErr } = await sangamClient
+                  .from('quotes')
+                  .update({ status: 'confirmed' })
+                  .eq('quote_number', quoteNumber)
+                if (statusErr) console.warn('[Quote Save] sangam.quotes status update failed (non-fatal):', statusErr.message)
+              }
+            }
+            } // end existingBooking-not-found branch (idempotency guard)
           }
         }
       } catch (err) {
-        console.warn('Failed writing quote to eventmgmt.booking:', err)
+        console.warn('Failed writing quote (draft/confirmed):', err)
       }
     }
-
     // Clean up any remaining internal tags
     reply = reply.replace(/\[SAVE_QUOTE:[^\]]+\]/gi, '').trim()
 
@@ -708,12 +956,10 @@ export function generateDynamicSuggestions(
     { label: '💎 Platinum Non-Veg (₹1,000)', text: 'I would like the Platinum Non-Veg Menu at ₹1,000 per plate' },
     { label: '🌿 Switch to Pure Veg', text: 'Actually, please show me the Pure Vegetarian menu packages' },
   ]
-
-  // Default discovery
-  return [
-    { label: '🏛️ Indoor Catering', text: 'I want an Indoor AC Banquet Hall quote with standard packages' },
-    { label: '🚚 Outdoor Catering', text: 'I want Outdoor Catering with custom trays and food setup' },
-  ]
+  // (No code after this point in the function — dietary is always resolved
+  // by here, since !lastDietary is handled earlier above. A "default
+  // discovery" fallback used to sit after this return and could never run;
+  // removed rather than left as dead code.)
 }
 
 export function getDynamicDateChips(): Array<{ label: string; text: string; isCalendar?: boolean }> {
