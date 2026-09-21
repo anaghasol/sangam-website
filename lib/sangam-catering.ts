@@ -204,12 +204,23 @@ export async function getSangamCateringLiveData(): Promise<CateringLiveData> {
 
     if (menuRes.data && menuRes.data.length > 0) {
       for (const m of menuRes.data as MenuRow[]) {
+        const price = Number(m.price_per_pax) || 0
+        // A ₹0 (or negative/missing) price means this is a master/template
+        // menu row used internally to build real packages from — not
+        // something a guest can actually book. Without this filter, the
+        // chat was offering a "Custom Menu (₹0/plate)" alongside real
+        // priced packages, which is confusing and not a real quote.
+        // Real custom-menu quotes are built from the guest's own dish
+        // picks (see CUSTOM DISHES INTAKE RULE in the system prompt) or
+        // priced per past custom bookings, not from this template row.
+        if (price <= 0) continue
+
         const isOutdoor = (m.menu_type || '').toLowerCase().includes('outdoor')
         const dietLabel = m.dietary_type ? ` [${m.dietary_type.toUpperCase()}]` : ''
         const entry: LiveMenu = {
           id: m.id,
           name: m.name,
-          pricePerPax: Number(m.price_per_pax) || 0,
+          pricePerPax: price,
           dietaryType: m.dietary_type || '',
           description: m.description,
           menuType: m.menu_type || '',
@@ -322,6 +333,128 @@ export async function getBranchIdByName(branchName: string): Promise<string | nu
   }
 }
 
+/**
+ * Looks up the real `eventmgmt.occasion.id` for an occasion name (e.g.
+ * "Wedding", "Birthday Party"). Returns null if unreachable or no match —
+ * callers must handle null (booking-intelligence lookups simply broaden the
+ * search to "any occasion" when this comes back null, rather than guessing).
+ */
+export async function getOccasionIdByName(occasionName: string): Promise<string | null> {
+  if (!occasionName) return null
+  const client = sbEvent()
+  if (!client) return null
+  try {
+    const { data, error } = await client
+      .from('occasion')
+      .select('id, name')
+      .ilike('name', `%${occasionName}%`)
+      .limit(1)
+    if (error || !data || data.length === 0) return null
+    return (data[0] as { id: string }).id
+  } catch (e) {
+    console.warn(`Occasion lookup failed for "${occasionName}":`, e)
+    return null
+  }
+}
+
+/**
+ * Real per-package dish composition, read from the actual menu builder
+ * tables (never written to by this app — SELECT only):
+ *   menu -> menu_categories -> category
+ *                          \-> menu_sections -> section_dish -> dish
+ *
+ * Until now the chat only ever had a package's price + free-text
+ * description, so its itemized dish lists were illustrative template text.
+ * This gives it the real dishes per package, which sections are
+ * customer-choosable ("choose any 2") vs fixed, and which carry an
+ * upcharge — grounded in the same menu builder the operations team uses.
+ *
+ * Cached alongside the other live catering data (20 min TTL).
+ */
+let menuBreakdownCache: { map: Map<string, string>; at: number } | null = null
+
+export async function getIndoorMenuDishBreakdown(): Promise<Map<string, string>> {
+  if (menuBreakdownCache && Date.now() - menuBreakdownCache.at < TTL_MS) return menuBreakdownCache.map
+
+  const map = new Map<string, string>()
+  const client = sbEvent()
+  if (!client) {
+    menuBreakdownCache = { map, at: Date.now() }
+    return map
+  }
+
+  try {
+    const [mcRes, catRes, sectionRes, sdRes, dishRes] = await Promise.all([
+      client.from('menu_categories').select('id, menu_id, category_id, display_order').order('display_order'),
+      client.from('category').select('id, name').eq('is_active', true),
+      client.from('menu_sections').select('id, menu_category_id, name, display_name, selection_limit, is_addon, is_accompaniment, sort_order').order('sort_order'),
+      client.from('section_dish').select('id, section_id, dish_id, is_default, extra_price, display_order').order('display_order'),
+      client.from('dish').select('id, name, dietary_type').eq('is_active', true),
+    ])
+
+    if (!mcRes.data || mcRes.data.length === 0) {
+      menuBreakdownCache = { map, at: Date.now() }
+      return map
+    }
+
+    const catNameById = new Map((catRes.data || []).map((c: any) => [c.id, c.name]))
+    const dishById = new Map((dishRes.data || []).map((d: any) => [d.id, d]))
+    const sectionsByMenuCatId = new Map<string, any[]>()
+    for (const s of sectionRes.data || []) {
+      const arr = sectionsByMenuCatId.get(s.menu_category_id) || []
+      arr.push(s)
+      sectionsByMenuCatId.set(s.menu_category_id, arr)
+    }
+    const dishesBySectionId = new Map<string, any[]>()
+    for (const sd of sdRes.data || []) {
+      const arr = dishesBySectionId.get(sd.section_id) || []
+      arr.push(sd)
+      dishesBySectionId.set(sd.section_id, arr)
+    }
+
+    // Group menu_categories rows by menu_id so we can build one block per menu.
+    const byMenu = new Map<string, any[]>()
+    for (const mc of mcRes.data as any[]) {
+      const arr = byMenu.get(mc.menu_id) || []
+      arr.push(mc)
+      byMenu.set(mc.menu_id, arr)
+    }
+
+    for (const [menuId, mcRows] of byMenu.entries()) {
+      const lines: string[] = []
+      for (const mc of mcRows) {
+        const catName = catNameById.get(mc.category_id) || 'Section'
+        const sections = sectionsByMenuCatId.get(mc.id) || []
+        if (sections.length === 0) continue
+        lines.push(`  ### ${catName}`)
+        for (const sec of sections) {
+          const dishRows = dishesBySectionId.get(sec.id) || []
+          if (dishRows.length === 0) continue
+          const limitNote = sec.selection_limit ? ` (choose any ${sec.selection_limit})` : ''
+          const addonNote = sec.is_addon ? ' [add-on, extra charge applies]' : ''
+          const complimentaryNote = sec.is_accompaniment ? ' [complimentary]' : ''
+          const label = sec.display_name || sec.name || 'Options'
+          lines.push(`    • ${label}${limitNote}${addonNote}${complimentaryNote}:`)
+          for (const sd of dishRows) {
+            const d = dishById.get(sd.dish_id)
+            if (!d) continue
+            const diet = d.dietary_type ? ` [${d.dietary_type}]` : ''
+            const def = sd.is_default ? ' (default)' : ''
+            const extra = sd.extra_price ? ` (+₹${sd.extra_price})` : ''
+            lines.push(`      - ${d.name}${diet}${def}${extra}`)
+          }
+        }
+      }
+      if (lines.length > 0) map.set(menuId, lines.join('\n'))
+    }
+  } catch (e) {
+    console.warn('Failed querying menu_categories/menu_sections/section_dish for dish breakdown — indoor menus will fall back to price-only text.', e)
+  }
+
+  menuBreakdownCache = { map, at: Date.now() }
+  return map
+}
+
 // Verified defaults — used ONLY as text for the AI's context when the live
 // tables above are empty/unreachable, so the assistant still has *something*
 // sane to say. These are never used for the actual quote math; see
@@ -342,10 +475,16 @@ const FALLBACK_OCCASIONS = ['Weddings', 'Engagements', 'Receptions', 'Birthdays'
 export async function getSangamCateringChatContext(): Promise<string> {
   if (textCache && Date.now() - textCache.at < TTL_MS) return textCache.text
 
-  const live = await getSangamCateringLiveData()
+  const [live, dishBreakdownMap] = await Promise.all([
+    getSangamCateringLiveData(),
+    getIndoorMenuDishBreakdown(),
+  ])
 
   const hallLines = live.hasLiveHalls ? live.halls.map(h => h.text) : FALLBACK_HALLS_TEXT
-  const indoorMenuLines = live.indoorMenus.length > 0 ? live.indoorMenus.map(m => m.text) : [
+  const indoorMenuLines = live.indoorMenus.length > 0 ? live.indoorMenus.flatMap(m => {
+    const breakdown = dishBreakdownMap.get(m.id)
+    return breakdown ? [m.text, breakdown] : [m.text]
+  }) : [
     '• (fallback — no live menu data on file. Do NOT invent prices — tell the guest to confirm current packages by calling +91 90638 44021.)'
   ]
   const outdoorMenuLines = live.outdoorMenus.length > 0 ? live.outdoorMenus.map(m => m.text) : [
