@@ -29,7 +29,29 @@ function sbSangam() {
 /**
  * Performs vector / keyword search on sangam.knowledge_chunks
  */
-export async function searchSangamKnowledgeChunks(userQuery: string, limit = 6): Promise<string> {
+// Hard cap on how much knowledge-chunk text can enter the prompt, no matter
+// how many chunks match or how long the knowledge base grows. Found live:
+// once real chunks started being seeded (see sangam-catering-knowledge.md),
+// pulling up to 6 full, untrimmed markdown sections pushed the total system
+// prompt from ~31K to ~52K characters, which made every free-tier AI
+// provider fail outright (fast-failing in ~1s, not even attempting
+// generation) — the chat silently fell back to its scripted English-only
+// templates for every single conversation. Truncating each chunk and
+// capping the total keeps this from ever silently regressing again.
+const MAX_CHUNK_CHARS = 350
+const MAX_TOTAL_CONTEXT_CHARS = 2000
+
+function truncateChunk(text: string): string {
+  if (text.length <= MAX_CHUNK_CHARS) return text
+  return text.slice(0, MAX_CHUNK_CHARS).trim() + '…'
+}
+
+function capTotalContext(text: string): string {
+  if (text.length <= MAX_TOTAL_CONTEXT_CHARS) return text
+  return text.slice(0, MAX_TOTAL_CONTEXT_CHARS).trim() + '\n[…truncated to keep the prompt within the free AI providers\' size limit]'
+}
+
+export async function searchSangamKnowledgeChunks(userQuery: string, limit = 3): Promise<string> {
   const client = sbSangam()
   if (!client || !userQuery) return ''
 
@@ -60,8 +82,8 @@ export async function searchSangamKnowledgeChunks(userQuery: string, limit = 6):
           })
 
           if (!rpcErr && rpcData && rpcData.length > 0) {
-            const lines = (rpcData as KnowledgeChunk[]).map(c => `• [${c.category.toUpperCase()}] ${c.content}`)
-            return `RELEVANT KNOWLEDGE CHUNKS (Vector Search Match):\n${lines.join('\n')}`
+            const lines = (rpcData as KnowledgeChunk[]).map(c => `• [${c.category.toUpperCase()}] ${truncateChunk(c.content)}`)
+            return capTotalContext(`RELEVANT KNOWLEDGE CHUNKS (Vector Search Match):\n${lines.join('\n')}`)
           }
         }
       } catch (e) {
@@ -79,8 +101,8 @@ export async function searchSangamKnowledgeChunks(userQuery: string, limit = 6):
 
     const { data: textData } = await query
     if (textData && textData.length > 0) {
-      const lines = textData.map((c: any) => `• [${(c.category || 'general').toUpperCase()}] ${c.content}`)
-      return `RELEVANT KNOWLEDGE CHUNKS (DB Keyword Match):\n${lines.join('\n')}`
+      const lines = textData.map((c: any) => `• [${(c.category || 'general').toUpperCase()}] ${truncateChunk(c.content)}`)
+      return capTotalContext(`RELEVANT KNOWLEDGE CHUNKS (DB Keyword Match):\n${lines.join('\n')}`)
     }
   } catch (e) {
     console.warn('Error querying sangam.knowledge_chunks:', e)

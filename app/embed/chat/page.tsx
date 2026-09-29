@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { getDynamicArjunGreeting } from "@/lib/greeting";
+import { translateSuggestionLabel } from "@/lib/suggestion-i18n";
 
-type ChatMsg = { role: "user" | "assistant"; content: string };
+type ChatMsg = { role: "user" | "assistant"; content: string; displayContent?: string };
 
 const INITIAL_SUGGESTIONS = [
   { label: "🏛️ Indoor Catering", text: "I want an Indoor AC Banquet Hall quote with standard packages" },
@@ -97,13 +98,92 @@ function renderChatMessage(content: string, isUser = false, onEditSection?: (tit
   );
 }
 
+// Memoized so that typing in the input box -- which re-renders the whole
+// EmbedChatPage component on every keystroke -- doesn't re-run
+// renderChatMessage() (a split + per-line regex parse) for every past
+// message in the conversation each time. Without this, INP got worse the
+// longer a conversation ran, since each keystroke re-parsed the entire
+// visible transcript synchronously on the main thread. React.memo skips
+// re-invoking this component's body entirely when its props (content,
+// isUser, onEditSection) are referentially unchanged from the previous
+// render -- so only a genuinely new/changed message pays the parsing cost.
+const MessageBubble = memo(function MessageBubble({
+  content,
+  isUser,
+  onEditSection,
+}: {
+  content: string;
+  isUser: boolean;
+  onEditSection: (title: string) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: isUser ? "flex-end" : "flex-start",
+        gap: 6,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "88%",
+          background: isUser ? "#8a1f2b" : "#fff",
+          color: isUser ? "#fff" : "#3a352e",
+          border: isUser ? "none" : "1px solid #ece2d2",
+          borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+          padding: "12px 16px",
+          font: "400 14px/1.6 'DM Sans'",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
+        }}
+      >
+        {renderChatMessage(content, isUser, onEditSection)}
+      </div>
+    </div>
+  );
+});
+
+// One id per browser/embed session, kept in sessionStorage so a page
+// refresh mid-conversation still logs to the same sangam.chat_sessions row
+// instead of splitting the transcript across rows. A brand new tab gets a
+// fresh id (sessionStorage, not localStorage) -- intentional, since a new
+// tab is a new conversation for analytics purposes.
+function getOrCreateChatSessionId(): string {
+  if (typeof window === "undefined") return "server";
+  try {
+    const KEY = "sangam_chat_session_id";
+    let id = window.sessionStorage.getItem(KEY);
+    if (!id) {
+      id = `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      window.sessionStorage.setItem(KEY, id);
+    }
+    return id;
+  } catch {
+    // sessionStorage can throw in some embed contexts (privacy mode,
+    // sandboxed iframes) -- fall back to a per-load id rather than crash.
+    return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
 export default function EmbedChatPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [suggestions, setSuggestions] = useState<Array<{ label: string; text: string }>>(INITIAL_SUGGESTIONS);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lang, setLang] = useState<'en' | 'te' | 'hi'>('en');
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const chatDatePickerRef = useRef<HTMLInputElement>(null);
+  const sessionIdRef = useRef<string>("");
+  if (!sessionIdRef.current) sessionIdRef.current = getOrCreateChatSessionId();
+  // A ref that always points at the latest sendChat closure, so
+  // handleEditSection below can stay referentially stable (empty deps)
+  // across every render -- which is what lets MessageBubble's memo
+  // actually skip re-rendering unchanged messages. If this called sendChat
+  // directly instead, handleEditSection would get a new identity every
+  // render (since sendChat itself is redefined each render), busting the
+  // memo for every single message on every keystroke.
+  const sendChatRef = useRef<(text?: string, displayText?: string) => void>(() => {});
 
   useEffect(() => {
     setMessages([
@@ -111,15 +191,28 @@ export default function EmbedChatPage() {
     ]);
   }, []);
 
+  // Switching language before the customer has sent anything re-opens the
+  // greeting in that language immediately, instead of waiting for the next
+  // AI reply. Once a real conversation is underway, past AI messages are
+  // left as-is (retranslating free-form AI text would need another AI
+  // call) — only the still-untouched opening greeting is swapped.
+  useEffect(() => {
+    setMessages(prev =>
+      prev.length === 1 && prev[0].role === "assistant"
+        ? [{ role: "assistant", content: getDynamicArjunGreeting(lang) }]
+        : prev
+    );
+  }, [lang]);
+
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  async function sendChat(text?: string) {
+  async function sendChat(text?: string, displayText?: string) {
     const msg = (text ?? input).trim();
     if (!msg || loading) return;
 
-    const next: ChatMsg[] = [...messages, { role: "user", content: msg }];
+    const next: ChatMsg[] = [...messages, { role: "user", content: msg, displayContent: displayText }];
     setMessages(next);
     setInput("");
     setLoading(true);
@@ -132,7 +225,7 @@ export default function EmbedChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })), responseLanguage: lang, sessionId: sessionIdRef.current }),
       });
       const data = await res.json();
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
@@ -152,6 +245,13 @@ export default function EmbedChatPage() {
       setLoading(false);
     }
   }
+  sendChatRef.current = sendChat;
+
+  // Stable across every render (empty deps) so MessageBubble's memo isn't
+  // busted just because EmbedChatPage re-rendered (e.g. from a keystroke).
+  const handleEditSection = useCallback((sectionTitle: string) => {
+    sendChatRef.current(`I would like to swap and customize dishes in the ${sectionTitle} section`);
+  }, []);
 
   function handleChipClick(ct: { label: string; text: string; isCalendar?: boolean }) {
     if (ct.isCalendar || ct.label.toLowerCase().includes('calendar')) {
@@ -167,7 +267,7 @@ export default function EmbedChatPage() {
         }
       }
     } else {
-      sendChat(ct.text);
+      sendChat(ct.text, translateSuggestionLabel(ct.label, lang));
     }
   }
 
@@ -215,6 +315,67 @@ export default function EmbedChatPage() {
             ● Arjun (Hospitality Manager) · Online
           </div>
         </div>
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setLangMenuOpen(v => !v)}
+            title="Chat language"
+            style={{
+              background: langMenuOpen ? "#c79a3a" : "rgba(255,255,255,.12)",
+              border: "none",
+              color: "#fff",
+              width: 34,
+              height: 34,
+              borderRadius: 9,
+              cursor: "pointer",
+              font: "600 14px/1 'DM Sans'",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            🌐
+          </button>
+          {langMenuOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: 40,
+                right: 0,
+                background: "#fff",
+                border: "1px solid #d6c9b6",
+                borderRadius: 12,
+                boxShadow: "0 12px 28px rgba(30,18,10,.22)",
+                overflow: "hidden",
+                zIndex: 90,
+                minWidth: 150,
+              }}
+            >
+              {([['en', 'English'], ['te', 'తెలుగు'], ['hi', 'हिन्दी']] as const).map(([code, name]) => (
+                <button
+                  key={code}
+                  onClick={() => { setLang(code); setLangMenuOpen(false); }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    cursor: "pointer",
+                    background: lang === code ? "#fbf1de" : "#fff",
+                    border: "none",
+                    borderBottom: "1px solid #f1e9db",
+                    color: "#241510",
+                    padding: "9px 14px",
+                    font: lang === code ? "700 13px/1 'DM Sans'" : "500 13px/1 'DM Sans'",
+                    textAlign: "left",
+                  }}
+                >
+                  <span>{name}</span>
+                  {lang === code && <span style={{ color: "#8a1f2b" }}>✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <a
           href="tel:+919063844021"
           style={{
@@ -245,35 +406,12 @@ export default function EmbedChatPage() {
         }}
       >
         {messages.map((m, i) => (
-          <div
+          <MessageBubble
             key={i}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: m.role === "user" ? "flex-end" : "flex-start",
-              gap: 6,
-            }}
-          >
-            <div
-              style={{
-                maxWidth: "88%",
-                background: m.role === "user" ? "#8a1f2b" : "#fff",
-                color: m.role === "user" ? "#fff" : "#3a352e",
-                border: m.role === "user" ? "none" : "1px solid #ece2d2",
-                borderRadius:
-                  m.role === "user"
-                    ? "16px 16px 4px 16px"
-                    : "16px 16px 16px 4px",
-                padding: "12px 16px",
-                font: "400 14px/1.6 'DM Sans'",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
-              }}
-            >
-              {renderChatMessage(m.content, m.role === "user", (sectionTitle) => {
-                sendChat(`I would like to swap and customize dishes in the ${sectionTitle} section`);
-              })}
-            </div>
-          </div>
+            content={m.displayContent ?? m.content}
+            isUser={m.role === "user"}
+            onEditSection={handleEditSection}
+          />
         ))}
 
         {loading && (
@@ -329,7 +467,7 @@ export default function EmbedChatPage() {
               boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
             }}
           >
-            <span>{ct.label}</span>
+            <span>{translateSuggestionLabel(ct.label, lang)}</span>
           </button>
         ))}
       </div>

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { sortBranchesByNearest } from "@/lib/sangam-branch-distance";
 import { getDynamicArjunGreeting } from "@/lib/greeting";
+import { translateSuggestionLabel } from "@/lib/suggestion-i18n";
 
 type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "contact" | "order";
 
@@ -412,7 +413,7 @@ export default function SangamHotels() {
   const [menuBranchId, setMenuBranchId] = useState("hayathnagar");
   const [liveReviews, setLiveReviews] = useState(TESTIMONIALS);
   const [igPosts, setIgPosts] = useState<Array<{ id: string; media_url: string; thumbnail_url?: string; permalink: string; caption?: string; media_type: string }>>([]);
-  type ChatMsg = { role: 'user' | 'assistant'; content: string };
+  type ChatMsg = { role: 'user' | 'assistant'; content: string; displayContent?: string };
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatSuggestions, setChatSuggestions] = useState<Array<{ label: string; text: string }>>(INITIAL_SUGGESTIONS);
 
@@ -423,6 +424,21 @@ export default function SangamHotels() {
   }, []);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatLang, setChatLang] = useState<'en' | 'te' | 'hi'>('en');
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+
+  // Switching language before the customer has sent anything re-opens the
+  // greeting in that language immediately, instead of waiting for the next
+  // AI reply. Once a real conversation is underway, past AI messages are
+  // left as-is (retranslating free-form AI text would need another AI
+  // call) — only the still-untouched opening greeting is swapped.
+  useEffect(() => {
+    setChatMessages(prev =>
+      prev.length === 1 && prev[0].role === 'assistant'
+        ? [{ role: 'assistant', content: getDynamicArjunGreeting(chatLang) }]
+        : prev
+    );
+  }, [chatLang]);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const chatDatePickerRef = useRef<HTMLInputElement>(null);
 
@@ -464,10 +480,10 @@ export default function SangamHotels() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  async function sendChat(text?: string) {
+  async function sendChat(text?: string, displayText?: string) {
     const msg = (text ?? chatInput).trim();
     if (!msg || chatLoading) return;
-    const next: ChatMsg[] = [...chatMessages, { role: 'user', content: msg }];
+    const next: ChatMsg[] = [...chatMessages, { role: 'user', content: msg, displayContent: displayText }];
     setChatMessages(next);
     setChatInput('');
     setChatLoading(true);
@@ -479,7 +495,7 @@ export default function SangamHotels() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })), responseLanguage: chatLang }),
       });
       const data = await res.json();
       setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
@@ -510,7 +526,7 @@ export default function SangamHotels() {
       // Not clearing suggestions here — opening the date picker doesn't send
       // a message yet, so the same chip row should stay usable until it does.
     } else {
-      sendChat(ct.text);
+      sendChat(ct.text, translateSuggestionLabel(ct.label, chatLang));
     }
   }
 
@@ -1686,6 +1702,34 @@ export default function SangamHotels() {
               <div style={{ font:"600 15px/1.1 'DM Sans'", color:"#fff" }}>Sangam Concierge</div>
               <div style={{ font:"500 11px/1.3 'DM Sans'", color:"#9fd9a0" }}>● online · replies instantly</div>
             </div>
+            <div style={{ position:"relative" }}>
+              <button
+                onClick={() => setLangMenuOpen(v => !v)}
+                title="Chat language"
+                style={{ background: langMenuOpen ? "#c79a3a" : "rgba(255,255,255,.12)", border:"none", color:"#fff", width:30, height:30, borderRadius:9, cursor:"pointer", font:"600 13px/1 'DM Sans'", display:"flex", alignItems:"center", justifyContent:"center", gap:2 }}
+              >
+                🌐
+              </button>
+              {langMenuOpen && (
+                <div style={{ position:"absolute", top:36, right:0, background:"#fff", border:"1px solid #d6c9b6", borderRadius:12, boxShadow:"0 12px 28px rgba(30,18,10,.22)", overflow:"hidden", zIndex:90, minWidth:150 }}>
+                  {([['en','English'],['te','తెలుగు'],['hi','हिन्दी']] as const).map(([code, name]) => (
+                    <button
+                      key={code}
+                      onClick={() => { setChatLang(code); setLangMenuOpen(false); }}
+                      style={{
+                        display:"flex", alignItems:"center", justifyContent:"space-between", width:"100%",
+                        cursor:"pointer", background: chatLang === code ? "#fbf1de" : "#fff", border:"none",
+                        borderBottom:"1px solid #f1e9db", color:"#241510", padding:"9px 14px",
+                        font: chatLang === code ? "700 13px/1 'DM Sans'" : "500 13px/1 'DM Sans'", textAlign:"left"
+                      }}
+                    >
+                      <span>{name}</span>
+                      {chatLang === code && <span style={{ color:"#8a1f2b" }}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button onClick={() => setChatOpen(false)} style={{ background:"rgba(255,255,255,.12)", border:"none", color:"#fff", width:30, height:30, borderRadius:9, cursor:"pointer", font:"600 15px/1 'DM Sans'" }}>✕</button>
           </div>
           {/* Messages */}
@@ -1702,7 +1746,7 @@ export default function SangamHotels() {
                   font:"400 13.5px/1.55 'DM Sans'",
                   boxShadow:"0 2px 6px rgba(0,0,0,0.03)"
                 }}>
-                  {renderChatMessage(m.content, m.role === 'user', (sectionTitle) => {
+                  {renderChatMessage(m.displayContent ?? m.content, m.role === 'user', (sectionTitle) => {
                     sendChat(`I would like to swap and customize dishes in the ${sectionTitle} section`);
                   })}
                 </div>
@@ -1743,7 +1787,7 @@ export default function SangamHotels() {
                   boxShadow:"0 1px 4px rgba(0,0,0,0.03)"
                 }}
               >
-                <span>{ct.label}</span>
+                <span>{translateSuggestionLabel(ct.label, chatLang)}</span>
               </button>
             ))}
           </div>

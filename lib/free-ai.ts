@@ -11,10 +11,13 @@
  * two got that fallback with `rate_limit_exceeded` on all six models. A busy
  * evening would do the same thing.
  *
- * Groq stays first because it is the fastest; the others exist so a rate limit
- * on any one provider is invisible to the guest rather than fatal.
+ * OmniRoute (a self-hosted gateway fronting Gemini/Claude/GPT-OSS) is tried
+ * first as of 2026-09-29, ahead of Groq, per Ravi's call; Groq and the rest
+ * remain as the fallback chain so a rate limit on any one provider is
+ * invisible to the guest rather than fatal.
  *
- * Every provider here is a FREE tier. No paid model is called.
+ * Every provider here is free at the point of use for this app (OmniRoute is
+ * Ravi's own self-hosted key). No paid API is called directly.
  */
 
 export type Msg = { role: string; content: string }
@@ -56,6 +59,28 @@ async function openaiStyle(
 }
 
 const PROVIDERS: Provider[] = [
+  {
+    // Self-hosted gateway (https://github.com/diegosouzapw/OmniRoute) fronting
+    // Gemini/Claude/GPT-OSS via the "antigravity" provider. Tried first per
+    // Ravi's call on 2026-09-29 — set OMNIROUTE_BASE_URL if it isn't running
+    // on localhost:20128 (e.g. behind a tunnel for production).
+    name: 'omniroute',
+    keys: () => [process.env.OMNIROUTE_API_KEY],
+    models: [
+      'antigravity/gemini-3.1-flash-lite',
+      'antigravity/gemini-3.1-pro-low',
+      'antigravity/gemini-3.7-flash-low',
+      'antigravity/gemini-3.7-flash-medium',
+      'antigravity/gemini-pro-agent',
+      'antigravity/claude-opus-4-6-thinking',
+      'antigravity/claude-sonnet-4-6',
+      'antigravity/gpt-oss-120b-medium',
+    ],
+    call: (k, m, s, msgs) => openaiStyle(
+      `${process.env.OMNIROUTE_BASE_URL || 'http://localhost:20128'}/v1/chat/completions`,
+      k, m, s, msgs,
+    ),
+  },
   {
     name: 'groq',
     keys: () => [process.env.GROQ_API_KEY],

@@ -10,18 +10,26 @@
  * - Sweets / Desserts: 1.5 portions per guest.
  *
  * REAL DATA: `generatePopularCateringQuote` takes an optional `live` param
- * (from `getSangamCateringLiveData()` in lib/sangam-catering.ts). When it's
- * supplied, the per-plate price and the recommended hall are always taken
- * from the live `eventmgmt.menu` / `eventmgmt.hall` rows — never guessed.
- * The itemized "what's included" dish list stays illustrative template text,
- * because `eventmgmt.menu` only stores a price + a free-text description per
- * package (no menu→dish join table exists in the schema), so which exact
- * dishes make up "Grand Non-Veg Menu" isn't something the database can
- * answer — only the manager's own written description can. The returned
- * `usedLiveData` flag tells the caller whether the number quoted actually
- * came from the database or is a generic fallback estimate.
+ * (from `getSangamCateringLiveData()` in lib/sangam-catering.ts) and an
+ * optional `menuBreakdown` param (from `getIndoorMenuStructured()`, same
+ * file). When supplied, the per-plate price and the recommended hall are
+ * always taken from the live `eventmgmt.menu` / `eventmgmt.hall` rows, and
+ * the itemized "what's included" dish list is built from the real
+ * menu -> menu_categories -> menu_sections -> section_dish -> dish join,
+ * honoring each section's `selection_limit` ("choose any N"), `is_addon`
+ * (extra-charge) and `is_accompaniment` (complimentary) rules exactly as
+ * set up in the menu builder — never a hardcoded illustrative list. If no
+ * structured breakdown is available for the resolved menu (live data
+ * unreachable, or this particular menu has no sections configured yet),
+ * it falls back to the old generic price-bracket template so the chat
+ * still has *something* to say rather than an empty menu.
+ * The returned `usedLiveData` flag tells the caller whether the number
+ * quoted actually came from the database or is a generic fallback
+ * estimate, and `hallFeeStatus` carries the real "hall is free once
+ * catering total reaches ₹X" rule so callers can state it deterministically
+ * instead of leaving the AI to guess it from prose.
  */
-import type { CateringLiveData, LiveMenu, LiveHall } from '@/lib/sangam-catering'
+import type { CateringLiveData, LiveMenu, LiveHall, StructuredMenuSection } from '@/lib/sangam-catering'
 
 export type GuestCountBreakdown = {
   adults: number
@@ -158,6 +166,92 @@ export function extractCustomDishes(text: string): string[] {
 /**
  * Generates custom or recommended quote based on user input.
  */
+/**
+ * Picks the real hall a confirmed indoor booking should be attached to —
+ * same "fits the guest count, prefer this branch's halls" logic
+ * `generatePopularCateringQuote` uses internally to recommend a hall in the
+ * quote text, exposed standalone so a later turn (when the customer
+ * actually confirms, which may not be the same request that generated the
+ * quote) can resolve the same real `eventmgmt.hall.id` to write onto
+ * `booking.hall_id` — previously nothing set hall_id on a confirmed
+ * booking at all.
+ */
+export function pickHallForGuestCount(halls: LiveHall[], branchId: string | null, guestCount: number): LiveHall | null {
+  if (!halls || halls.length === 0) return null
+  const branchHalls = branchId ? halls.filter(h => h.branchId === branchId) : []
+  const pool = branchHalls.length > 0 ? branchHalls : halls
+  const fits = pool.filter(h => (h.maxPax == null || guestCount <= h.maxPax) && (h.minPax == null || guestCount >= h.minPax))
+  return fits.length > 0
+    ? fits.reduce((best, h) => (h.maxPax ?? Infinity) < (best.maxPax ?? Infinity) ? h : best)
+    : pool.reduce((best, h) => (h.maxPax ?? 0) > (best.maxPax ?? 0) ? h : best)
+}
+
+// Common everyday words for a section/category that don't line up with the
+// exact DB label (e.g. the real section might be called "Welcome Snacks" or
+// "Hot Items" but a customer just says "starters") — used only to WIDEN the
+// search for a real section by name; a match still has to land on one of
+// this menu's actual sections, never an invented one.
+const SECTION_KEYWORD_SYNONYMS: Record<string, string[]> = {
+  drinks: ['welcome drinks', 'beverage', 'juice', 'mocktail', 'welcome drink'],
+  soup: ['soup'],
+  salad: ['salad'],
+  starter: ['starter', 'appetizer', 'snack', 'welcome snack'],
+  bread: ['bread', 'naan', 'roti', 'kulcha', 'poori', 'flatbread'],
+  rice: ['rice', 'biryani', 'pulao'],
+  curry: ['curry', 'curries', 'gravy', 'main course', 'main curries'],
+  dal: ['dal', 'lentil', 'sambar', 'rasam'],
+  accompaniment: ['accompaniment', 'raita', 'curd', 'pickle', 'pachadi', 'papad'],
+  dessert: ['dessert', 'sweet', 'sweets', 'ice cream', 'ice-cream'],
+  extra: ['extra', 'add-on', 'addon'],
+}
+
+/**
+ * Finds the real section (from THIS menu's actual structured breakdown —
+ * never a guess outside it) that a piece of free customer text is most
+ * likely referring to, by checking the section's own name, its category
+ * name, and a small set of everyday synonyms against the text. Returns
+ * null when nothing in the real breakdown matches — callers must never
+ * fabricate a section when this returns null.
+ */
+export function matchSectionByText(sections: StructuredMenuSection[], text: string): StructuredMenuSection | null {
+  if (!sections || sections.length === 0 || !text) return null
+  const lower = text.toLowerCase()
+
+  // 1. Exact-ish match against the section's own real name/category first —
+  // the strongest possible signal since it's the literal DB label.
+  for (const sec of sections) {
+    if (sec.sectionName && lower.includes(sec.sectionName.toLowerCase())) return sec
+  }
+  for (const sec of sections) {
+    if (sec.categoryName && lower.includes(sec.categoryName.toLowerCase())) return sec
+  }
+
+  // 2. Fall back to everyday synonyms, matched against both the section's
+  // and its category's real name — picks the first section under a
+  // matching category if the customer didn't name the specific sub-section.
+  for (const [, synonyms] of Object.entries(SECTION_KEYWORD_SYNONYMS)) {
+    if (!synonyms.some(s => lower.includes(s))) continue
+    for (const sec of sections) {
+      const hay = `${sec.sectionName} ${sec.categoryName}`.toLowerCase()
+      if (synonyms.some(s => hay.includes(s))) return sec
+    }
+  }
+  return null
+}
+
+/**
+ * Scans free customer text for any dish name that's actually in the given
+ * section's real catalog (`sec.dishes` — the FULL list, not just what's
+ * shown by default). Only ever returns dishes that are genuinely on file
+ * for that exact section, so a swap built from this can never invent or
+ * misattribute a dish.
+ */
+export function findDishesInSectionFromText(section: StructuredMenuSection, text: string): StructuredMenuSection['dishes'] {
+  if (!section || !text) return []
+  const lower = text.toLowerCase()
+  return section.dishes.filter(d => d.name && lower.includes(d.name.toLowerCase()))
+}
+
 export function generatePopularCateringQuote(
   serviceType: 'outdoor' | 'inhouse' | 'custom',
   branch: string,
@@ -167,7 +261,21 @@ export function generatePopularCateringQuote(
   userMessageText = '',
   live?: CateringLiveData,
   /** Real `branches.id` for the branch the guest picked, if resolved — used to restrict hall selection to that branch's halls. */
-  branchId?: string | null
+  branchId?: string | null,
+  /** Real per-menu section/dish breakdown, keyed by `eventmgmt.menu.id` — from `getIndoorMenuStructured()`. */
+  menuBreakdown?: Map<string, StructuredMenuSection[]>,
+  /**
+   * Customer-chosen dish swaps, keyed by the real `sectionName` (as it
+   * appears in that menu's structured breakdown) to the dish name(s) the
+   * customer picked to replace the default/most-booked selection with.
+   * Every name here is expected to already be validated against that
+   * section's real `dishes` catalog by the caller (see
+   * `matchSectionByText`/`findDishesInSectionFromText` below) — this
+   * function still re-validates by matching case-insensitively against
+   * `sec.dishes`, and silently ignores a name that isn't actually in that
+   * section's real catalog rather than inventing a dish.
+   */
+  sectionOverrides?: Record<string, string[]>
 ): {
   headline: string
   menuItems: string[]
@@ -179,6 +287,14 @@ export function generatePopularCateringQuote(
   usedLiveData: boolean
   /** True when a hall was actually picked from this branch's halls (as opposed to any branch, or a guess). */
   usedBranchMatchedHall: boolean
+  /** True when the itemized dish list came from the real menu_sections/section_dish tables rather than a hardcoded template. */
+  usedRealMenuBreakdown: boolean
+  /** The real "hall is free once catering total reaches ₹X" rule outcome — 'unknown' when the chosen hall has no threshold on file. */
+  hallFeeStatus: 'waived' | 'not_waived' | 'unknown'
+  /** The threshold itself, when known, so callers can state "₹X more to waive the hall fee" etc. */
+  hallFreeThreshold: number | null
+  /** The real per-menu sections actually used (real DB breakdown only) — empty when this menu has no structured breakdown or this isn't an indoor real-data quote. Lets a caller detect/build dish-edit flows without re-querying. */
+  sections: StructuredMenuSection[]
 } {
   const customDishes = userMessageText ? extractCustomDishes(userMessageText) : []
   const hasCustomMenu = customDishes.length >= 2
@@ -245,7 +361,11 @@ export function generatePopularCateringQuote(
       // Custom, guest-named dishes aren't a DB package lookup — pricing here
       // is the same per-dish tray-math estimate it always was.
       usedLiveData: false,
-      usedBranchMatchedHall: false
+      usedBranchMatchedHall: false,
+      usedRealMenuBreakdown: false,
+      hallFeeStatus: 'unknown',
+      hallFreeThreshold: null,
+      sections: []
     }
   }
 
@@ -311,6 +431,7 @@ export function generatePopularCateringQuote(
     let usedLiveHall = false
     let usedBranchMatchedHall = false
     let hallFeeStatus: 'waived' | 'not_waived' | 'unknown' = 'waived'
+    let hallFreeThreshold: number | null = null
 
     if (live?.halls && live.halls.length > 0) {
       // Restrict to this branch's halls, but only if that actually leaves
@@ -328,6 +449,7 @@ export function generatePopularCateringQuote(
       hallCap = chosen.minPax && chosen.maxPax ? `${chosen.minPax}–${chosen.maxPax} pax` : (chosen.maxPax ? `up to ${chosen.maxPax} pax` : (chosen.capacity ? `${chosen.capacity} pax` : 'capacity on request'))
       usedLiveHall = true
       usedBranchMatchedHall = branchHalls.length > 0
+      hallFreeThreshold = chosen.minCateringValueForFree ?? null
       hallFeeStatus = chosen.minCateringValueForFree == null
         ? 'unknown'
         : (subtotal >= chosen.minCateringValueForFree ? 'waived' : 'not_waived')
@@ -346,73 +468,146 @@ export function generatePopularCateringQuote(
     }
 
     let menuItems: string[] = []
-    // Illustrative dish breakdown is templated by price bracket, since
-    // eventmgmt.menu has no menu→dish join table to read an exact list from
-    // (see file header). Bucketed on the guessed `targetPrice`, not the real
-    // `platePrice`, so a live price like ₹850 still picks the closest template.
+    let usedRealMenuBreakdown = false
+
+    // Real data path: build the itemized list from the actual menu builder
+    // tables (menu -> menu_categories -> menu_sections -> section_dish ->
+    // dish), honoring each section's real selection_limit ("choose any N"),
+    // is_addon (extra-charge) and is_accompaniment (complimentary) flags —
+    // and listing default-flagged dishes first within each section as a
+    // popularity proxy (see getIndoorMenuStructured's comment for why).
+    const realSections = liveMenu ? menuBreakdown?.get(liveMenu.id) : undefined
+    if (realSections && realSections.length > 0) {
+      usedRealMenuBreakdown = true
+      const catIcons: Record<string, string> = {
+        'welcome drinks': '🍹', 'starters': '🥗', 'starters & appetizers': '🥗',
+        'main course': '🍛', 'curries': '🍛', 'main course curries': '🍛',
+        'rice': '🍚', 'biryani': '🍚', 'rice & biryani': '🍚',
+        'breads': '🫓', 'live tandoor breads': '🫓',
+        'desserts': '🍨', 'sweets': '🍨', 'sweets & desserts': '🍨',
+      }
+      // Group sections by category, preserving the order they came back in
+      // (already sort_order'd by the query that built menuBreakdown).
+      const byCategory = new Map<string, StructuredMenuSection[]>()
+      for (const sec of realSections) {
+        const arr = byCategory.get(sec.categoryName) || []
+        arr.push(sec)
+        byCategory.set(sec.categoryName, arr)
+      }
+      for (const [catName, sections] of byCategory.entries()) {
+        const icon = catIcons[catName.toLowerCase()] || '🍽️'
+        const sectionBlocks = sections.map(sec => {
+          const addonNote = sec.isAddon ? ' [add-on, extra charge applies]' : ''
+          const complimentaryNote = sec.isAccompaniment ? ' [complimentary]' : ''
+          // Show every section, but only its own "choose any N" count
+          // worth of dishes — normally the default-first ones (the closest
+          // real signal to "mostly booked" until booking.menu_selection
+          // stores structured per-dish selections; see the comment on
+          // getIndoorMenuStructured). If the customer swapped a dish in
+          // this section earlier in the conversation, that swap — already
+          // validated against this exact section's real catalog by the
+          // caller — takes over instead. No "(Choose any N)" label and no
+          // "[Edit]" tag are shown — that layout is retired; the customer
+          // just sees the picked dishes for each section.
+          const showCount = sec.selectionLimit || 4
+          const overrideNames = sectionOverrides?.[sec.sectionName]
+          const overrideDishes = overrideNames
+            ? overrideNames
+                .map(name => sec.dishes.find(d => d.name.toLowerCase() === name.toLowerCase()))
+                .filter((d): d is (typeof sec.dishes)[number] => !!d)
+            : []
+          const shownDishes = overrideDishes.length > 0 ? overrideDishes.slice(0, showCount) : sec.dishes.slice(0, showCount)
+          const dishNames = shownDishes.map(d => {
+            const extra = d.extraPrice ? ` (+₹${d.extraPrice})` : ''
+            return `${d.name}${extra}`
+          }).join(', ')
+          return `**${sec.sectionName}**${addonNote}${complimentaryNote}\n• ${dishNames}`
+        })
+        menuItems.push(`### ${icon} ${catName}\n${sectionBlocks.join('\n')}`)
+      }
+    }
+
+    // Fallback path: no real breakdown for this menu (live data unreachable,
+    // or this particular menu has no sections configured in the builder
+    // yet) — illustrative dish list templated by price bracket, bucketed on
+    // the guessed `targetPrice` rather than the real `platePrice`, so a
+    // live price like ₹850 still picks the closest template.
     const templateBucket = targetPrice
 
-    if (templateBucket === 600) {
+    if (usedRealMenuBreakdown) {
+      // real menuItems already built above
+    } else if (templateBucket === 600) {
       menuItems = [
-        '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Mint Mojito / Sweet Lime Juice',
-        '### 🥗 Starters & Appetizers [✏️ Edit]\n• Veg Manchurian & Paneer Tikka (2 Live Counters)',
-        '### 🍛 Main Course Curries [✏️ Edit]\n• Paneer Butter Masala, Mixed Veg Korma, Dal Tadka',
-        '### 🍚 Rice & Biryani [✏️ Edit]\n• Signature Hyderabadi Veg Dum Biryani + Mirchi Ka Salan & Raitha',
-        '### 🫓 Live Tandoor Breads [✏️ Edit]\n• Fresh Butter Naan & Soft Pulkas (Live Tandoor Counter)',
-        '### 🍨 Sweets & Desserts [✏️ Edit]\n• Hot Gulab Jamun & Royal Quarbani Ka Meetha'
+        '### 🍹 Welcome Drinks\n• Fresh Mint Mojito / Sweet Lime Juice',
+        '### 🥗 Starters & Appetizers\n• Veg Manchurian & Paneer Tikka (2 Live Counters)',
+        '### 🍛 Main Course Curries\n• Paneer Butter Masala, Mixed Veg Korma, Dal Tadka',
+        '### 🍚 Rice & Biryani\n• Signature Hyderabadi Veg Dum Biryani + Mirchi Ka Salan & Raitha',
+        '### 🫓 Live Tandoor Breads\n• Fresh Butter Naan & Soft Pulkas (Live Tandoor Counter)',
+        '### 🍨 Sweets & Desserts\n• Hot Gulab Jamun & Royal Quarbani Ka Meetha'
       ]
     } else if (templateBucket === 700) {
       menuItems = [
-        '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Mint Mojito / Blue Lagoon Punch',
-        '### 🥗 Starters & Appetizers [✏️ Edit]\n• Crispy Corn, Veg Manchurian, Paneer 65, Spring Rolls (4 Starters)',
-        '### 🍛 Main Course Curries [✏️ Edit]\n• Kaju Paneer Masala, Methi Chaman, Dal Makhani',
-        '### 🍚 Rice & Biryani [✏️ Edit]\n• Special Veg Dum Biryani + Bagara Rice (with Salan & Raitha)',
-        '### 🫓 Live Tandoor Breads [✏️ Edit]\n• Butter Naan, Garlic Naan & Soft Pulkas (Live Tandoor Counter)',
-        '### 🍨 Sweets & Desserts [✏️ Edit]\n• Hot Gulab Jamun, Royal Quarbani Ka Meetha & Vanilla Ice Cream'
+        '### 🍹 Welcome Drinks\n• Fresh Mint Mojito / Blue Lagoon Punch',
+        '### 🥗 Starters & Appetizers\n• Crispy Corn, Veg Manchurian, Paneer 65, Spring Rolls (4 Starters)',
+        '### 🍛 Main Course Curries\n• Kaju Paneer Masala, Methi Chaman, Dal Makhani',
+        '### 🍚 Rice & Biryani\n• Special Veg Dum Biryani + Bagara Rice (with Salan & Raitha)',
+        '### 🫓 Live Tandoor Breads\n• Butter Naan, Garlic Naan & Soft Pulkas (Live Tandoor Counter)',
+        '### 🍨 Sweets & Desserts\n• Hot Gulab Jamun, Royal Quarbani Ka Meetha & Vanilla Ice Cream'
       ]
     } else if (templateBucket === 900) {
       menuItems = [
-        '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Mint Mojito / Fruit Punch Mocktail',
-        '### 🥗 Starters & Appetizers [✏️ Edit]\n• Hyderabadi Chicken 65, Apollo Fish, Veg Manchurian, Paneer Tikka (4 Live Starters)',
-        '### 🍛 Main Course Curries [✏️ Edit]\n• Dum Ka Chicken Curry, Mutton Rogan Josh, Paneer Butter Masala, Dal Tadka',
-        '### 🍚 Rice & Biryani [✏️ Edit]\n• Hyderabadi Chicken Dum Biryani + Special Mutton Biryani (with Salan & Raitha)',
-        '### 🫓 Live Tandoor Breads [✏️ Edit]\n• Butter Naan, Tandoori Roti & Rumali Roti (Live Tandoor Counter)',
-        '### 🍨 Sweets & Desserts [✏️ Edit]\n• Hot Gulab Jamun, Royal Double Ka Meetha & Vanilla Ice Cream'
+        '### 🍹 Welcome Drinks\n• Fresh Mint Mojito / Fruit Punch Mocktail',
+        '### 🥗 Starters & Appetizers\n• Hyderabadi Chicken 65, Apollo Fish, Veg Manchurian, Paneer Tikka (4 Live Starters)',
+        '### 🍛 Main Course Curries\n• Dum Ka Chicken Curry, Mutton Rogan Josh, Paneer Butter Masala, Dal Tadka',
+        '### 🍚 Rice & Biryani\n• Hyderabadi Chicken Dum Biryani + Special Mutton Biryani (with Salan & Raitha)',
+        '### 🫓 Live Tandoor Breads\n• Butter Naan, Tandoori Roti & Rumali Roti (Live Tandoor Counter)',
+        '### 🍨 Sweets & Desserts\n• Hot Gulab Jamun, Royal Double Ka Meetha & Vanilla Ice Cream'
       ]
     } else if (templateBucket === 1000) {
       menuItems = [
-        '### 🍹 Welcome Drinks [✏️ Edit]\n• Royal Assorted Welcome Mocktails & Fruit Punch',
-        '### 🥗 Starters & Appetizers [✏️ Edit]\n• Chicken Majestic, Tandoori Prawns, Mutton Seekh Kebab, Paneer Tikka (4 Premium Starters)',
-        '### 🍛 Main Course Curries [✏️ Edit]\n• Gongura Mutton Curry, Butter Chicken Masala, Kadai Paneer, Dal Makhani',
-        '### 🍚 Rice & Biryani [✏️ Edit]\n• Royal Hyderabadi Mutton Dum Biryani + Special Chicken Biryani + Bagara Rice',
-        '### 🫓 Live Tandoor Breads [✏️ Edit]\n• Assorted Butter Naan, Garlic Naan & Tandoori Roti (Live Counter)',
-        '### 🍨 Sweets & Desserts [✏️ Edit]\n• Quarbani Ka Meetha with Malai, Angoori Gulab Jamun & Premium Ice Cream'
+        '### 🍹 Welcome Drinks\n• Royal Assorted Welcome Mocktails & Fruit Punch',
+        '### 🥗 Starters & Appetizers\n• Chicken Majestic, Tandoori Prawns, Mutton Seekh Kebab, Paneer Tikka (4 Premium Starters)',
+        '### 🍛 Main Course Curries\n• Gongura Mutton Curry, Butter Chicken Masala, Kadai Paneer, Dal Makhani',
+        '### 🍚 Rice & Biryani\n• Royal Hyderabadi Mutton Dum Biryani + Special Chicken Biryani + Bagara Rice',
+        '### 🫓 Live Tandoor Breads\n• Assorted Butter Naan, Garlic Naan & Tandoori Roti (Live Counter)',
+        '### 🍨 Sweets & Desserts\n• Quarbani Ka Meetha with Malai, Angoori Gulab Jamun & Premium Ice Cream'
       ]
     } else {
       // Standard Non-Veg ₹800
       menuItems = [
-        '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Mint Mojito / Lychee Punch',
-        '### 🥗 Starters & Appetizers [✏️ Edit]\n• Hyderabadi Chicken 65, Tangdi Kebab, Veg Manchurian (3 Live Starters)',
-        '### 🍛 Main Course Curries [✏️ Edit]\n• Butter Chicken Masala, Paneer Butter Masala, Dal Makhani',
-        '### 🍚 Rice & Biryani [✏️ Edit]\n• Hyderabadi Chicken Dum Biryani + Veg Dum Biryani (with Salan & Raitha)',
-        '### 🫓 Live Tandoor Breads [✏️ Edit]\n• Butter Naan & Roti (Live Tandoor Counter)',
-        '### 🍨 Sweets & Desserts [✏️ Edit]\n• Royal Double Ka Meetha & Vanilla Ice Cream'
+        '### 🍹 Welcome Drinks\n• Fresh Mint Mojito / Lychee Punch',
+        '### 🥗 Starters & Appetizers\n• Hyderabadi Chicken 65, Tangdi Kebab, Veg Manchurian (3 Live Starters)',
+        '### 🍛 Main Course Curries\n• Butter Chicken Masala, Paneer Butter Masala, Dal Makhani',
+        '### 🍚 Rice & Biryani\n• Hyderabadi Chicken Dum Biryani + Veg Dum Biryani (with Salan & Raitha)',
+        '### 🫓 Live Tandoor Breads\n• Butter Naan & Roti (Live Tandoor Counter)',
+        '### 🍨 Sweets & Desserts\n• Royal Double Ka Meetha & Vanilla Ice Cream'
       ]
     }
 
     const hallFeeLine = hallFeeStatus === 'waived'
-      ? '• Hall Fee Status: **Complimentary / Waived** (catering total meets the free-hall threshold)'
+      ? `• Hall Fee Status: **Complimentary / Waived**${hallFreeThreshold ? ` (catering total ≥ ₹${hallFreeThreshold.toLocaleString('en-IN')})` : ''}`
       : hallFeeStatus === 'not_waived'
-        ? '• Hall Fee Status: **Hall charge applies** (catering total is below this hall\'s free-hall threshold — our team will confirm the exact charge)'
-        : '• Hall Fee Status: To be confirmed by our catering manager'
+        ? `• Hall Fee Status: **Hall charge applies**${hallFreeThreshold ? ` (waived once catering total reaches ₹${hallFreeThreshold.toLocaleString('en-IN')} — you're ₹${(hallFreeThreshold - subtotal).toLocaleString('en-IN')} away)` : ''}`
+        : '• Hall Fee Status: Confirmed with our catering manager based on your final package'
 
     const venueNote = !usedLiveHall
       ? ' *(estimated — confirm availability)*'
       : (branchId && !usedBranchMatchedHall ? ' *(no hall on file for this branch yet — confirm with our catering manager)*' : '')
 
     return {
-      headline: `🏛️ **Indoor AC Banquet Hall Estimation (${branch || 'Peerzadiguda / Hayathnagar'})**${usedLivePrice ? '' : ' *(estimated pricing — please confirm with our catering manager)*'}`,
-      menuItems: liveMenu?.description ? [...menuItems, `### 📝 Package Notes [✏️ Edit]\n• ${liveMenu.description}`] : menuItems,
+      // Bug fix (2026-09-28): this used to fall back to the literal string
+      // 'Peerzadiguda / Hayathnagar' -- two real branch names joined with a
+      // slash -- whenever the caller hadn't actually resolved a branch yet.
+      // That's an internal "assume one of our two flagship branches"
+      // default, never meant to be shown to a customer, but it printed
+      // verbatim in the estimate header as if it were a real venue name.
+      // The caller (app/api/chat/route.ts) now hard-gates on a resolved
+      // branch before ever calling this function for a real estimate, so
+      // `branch` should always be a real name here -- this fallback is a
+      // safety net only, and says so plainly instead of naming two branches
+      // at once.
+      headline: `🏛️ **Indoor AC Banquet Hall Estimation (${branch || 'branch to be confirmed'})**${usedLivePrice ? '' : ' *(estimated pricing — please confirm with our catering manager)*'}`,
+      menuItems: liveMenu?.description ? [...menuItems, `### 📝 Package Notes\n• ${liveMenu.description}`] : menuItems,
       trayBreakdown: [
         `• Selected Package: **${packageName} (₹${platePrice}/plate)**`,
         `• Guest Count: **${guestCount} Pax**`,
@@ -424,7 +619,11 @@ export function generatePopularCateringQuote(
       subtotal,
       finalTotal: subtotal,
       usedLiveData: usedLivePrice,
-      usedBranchMatchedHall
+      usedBranchMatchedHall,
+      usedRealMenuBreakdown,
+      hallFeeStatus,
+      hallFreeThreshold,
+      sections: realSections || []
     }
   }
 
@@ -444,25 +643,25 @@ export function generatePopularCateringQuote(
   const platePrice = liveOutdoorMenu ? liveOutdoorMenu.pricePerPax : (isVegOnly ? 499 : 649)
   let subtotal = platePrice * guestCount
   const menuItems = isVegOnly ? [
-    '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Lime Mint Cooler / Sweet Lime Juice',
-    `### 🥗 Starters & Appetizers [✏️ Edit]\n• Paneer 65 & Crispy Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
-    `### 🍛 Main Course Curries [✏️ Edit]\n• Paneer Butter Masala & Dal Tadka (${curryTrays} Full Trays each)`,
-    `### 🍚 Rice & Biryani [✏️ Edit]\n• Signature Hyderabadi Veg Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
-    `### 🫓 Live Tandoor Breads [✏️ Edit]\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
-    `### 🍨 Sweets & Desserts [✏️ Edit]\n• Hot Gulab Jamun & Royal Quarbani Ka Meetha`
+    '### 🍹 Welcome Drinks\n• Fresh Lime Mint Cooler / Sweet Lime Juice',
+    `### 🥗 Starters & Appetizers\n• Paneer 65 & Crispy Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
+    `### 🍛 Main Course Curries\n• Paneer Butter Masala & Dal Tadka (${curryTrays} Full Trays each)`,
+    `### 🍚 Rice & Biryani\n• Signature Hyderabadi Veg Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
+    `### 🫓 Live Tandoor Breads\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
+    `### 🍨 Sweets & Desserts\n• Hot Gulab Jamun & Royal Quarbani Ka Meetha`
   ] : [
-    '### 🍹 Welcome Drinks [✏️ Edit]\n• Fresh Mint Mojito / Welcome Mocktail',
-    `### 🥗 Starters & Appetizers [✏️ Edit]\n• Hyderabadi Chicken 65 & Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
-    `### 🍛 Main Course Curries [✏️ Edit]\n• Butter Chicken & Paneer Butter Masala (${curryTrays} Full Trays each)`,
-    `### 🍚 Rice & Biryani [✏️ Edit]\n• Signature Hyderabadi Chicken Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
-    `### 🫓 Live Tandoor Breads [✏️ Edit]\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
-    `### 🍨 Sweets & Desserts [✏️ Edit]\n• Royal Double Ka Meetha & Hot Gulab Jamun`
+    '### 🍹 Welcome Drinks\n• Fresh Mint Mojito / Welcome Mocktail',
+    `### 🥗 Starters & Appetizers\n• Hyderabadi Chicken 65 & Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
+    `### 🍛 Main Course Curries\n• Butter Chicken & Paneer Butter Masala (${curryTrays} Full Trays each)`,
+    `### 🍚 Rice & Biryani\n• Signature Hyderabadi Chicken Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
+    `### 🫓 Live Tandoor Breads\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
+    `### 🍨 Sweets & Desserts\n• Royal Double Ka Meetha & Hot Gulab Jamun`
   ]
 
   if (extraModifications.length > 0) {
     extraModifications.forEach(mod => {
       if (mod.toLowerCase().includes('mutton')) {
-        menuItems.push(`### 🍖 Special Addition [✏️ Edit]\n• Mutton Chukka (${curryTrays} Full Trays)`)
+        menuItems.push(`### 🍖 Special Addition\n• Mutton Chukka (${curryTrays} Full Trays)`)
         subtotal += 120 * guestCount
       }
     })
@@ -470,7 +669,7 @@ export function generatePopularCateringQuote(
 
   return {
     headline: `🚚 **Outdoor Catering & Live Food Setup Estimation**${usedLiveOutdoorPrice ? '' : ' *(estimated pricing — please confirm with our catering manager)*'}`,
-    menuItems: liveOutdoorMenu?.description ? [...menuItems, `### 📝 Package Notes [✏️ Edit]\n• ${liveOutdoorMenu.description}`] : menuItems,
+    menuItems: liveOutdoorMenu?.description ? [...menuItems, `### 📝 Package Notes\n• ${liveOutdoorMenu.description}`] : menuItems,
     trayBreakdown: [
       `• Biryani Trays: **${biryaniTrays} Full Trays** (feeds 25–30 pax per tray)`,
       `• Starter Trays: **${starterTrays} Full Trays** (feeds 40–50 pax per tray)`,
@@ -481,7 +680,11 @@ export function generatePopularCateringQuote(
     subtotal,
     finalTotal: subtotal,
     usedLiveData: usedLiveOutdoorPrice,
-    usedBranchMatchedHall: false
+    usedBranchMatchedHall: false,
+    usedRealMenuBreakdown: false,
+    hallFeeStatus: 'unknown',
+    hallFreeThreshold: null,
+    sections: []
   }
 }
 

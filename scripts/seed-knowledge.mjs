@@ -1,31 +1,38 @@
 #!/usr/bin/env node
 /**
- * Seeds sangam-catering-knowledge.md into sangam.knowledge_chunks with real
- * OpenAI embeddings, so the chat's semantic search in
- * lib/sangam-knowledge.ts (searchSangamKnowledgeChunks) has something real
- * to find. Until this has been run at least once with actual content and a
- * real OPENAI_API_KEY, that vector search always falls through to its
- * keyword fallback against an empty table.
+ * Seeds sangam-catering-knowledge.md into sangam.knowledge_chunks, so the
+ * chat's semantic/keyword search in lib/sangam-knowledge.ts
+ * (searchSangamKnowledgeChunks) has something real to find.
  *
- * SAFE BY DESIGN — READ + INSERT ONLY, NEVER DELETE OR UPDATE:
+ * Embeddings are OPTIONAL. If OPENAI_API_KEY is present in .env.local, each
+ * chunk is seeded with a real OpenAI embedding and true vector similarity
+ * search is used by the chat. If OPENAI_API_KEY is NOT present (as of this
+ * writing it isn't, and only GROQ_API_KEY / GEMINI_API_KEY are configured),
+ * chunks are still seeded — just with embedding left null — and the chat's
+ * existing keyword fallback (ILIKE search on `content`) picks them up
+ * immediately. No functionality is blocked on getting an OpenAI key; running
+ * this script again later after adding one will backfill embeddings onto
+ * chunks that don't have one yet, upgrading them to vector search in place.
+ *
+ * SAFE BY DESIGN — READ + INSERT ONLY, NEVER DELETE, AND UPDATE ONLY TO ADD
+ * A MISSING EMBEDDING:
  *   - Before inserting a chunk, it checks whether a chunk with the exact
- *     same content already exists (active=true) and skips it if so.
- *   - It never deletes, updates, or deactivates any existing row. Running
- *     this repeatedly as you edit the markdown file only ever adds rows for
- *     genuinely new/changed sections — nothing already in the table is ever
- *     touched, let alone removed.
- *   - If you ever rewrite a section's wording, its old chunk stays in the
- *     table (harmless — semantic search just has an extra, slightly stale
- *     match). Deliberately not doing anything smarter than that here, since
- *     "don't delete data" was an explicit instruction.
+ *     same content already exists (active=true). If it exists and already
+ *     has an embedding, it's left alone. If it exists but has no embedding
+ *     yet and OPENAI_API_KEY is now available, it gets ONE UPDATE that only
+ *     sets the embedding column — never touches content/category/active.
+ *   - It never deletes, updates content, or deactivates any existing row.
+ *     Running this repeatedly as you edit the markdown file only ever adds
+ *     rows for genuinely new/changed sections — nothing already in the
+ *     table is ever removed, since "don't delete data" is an explicit
+ *     instruction for this project.
  *
  * Usage:
  *   node scripts/seed-knowledge.mjs
  *   node scripts/seed-knowledge.mjs path/to/other-file.md   (optional override)
  *
- * Requires in .env.local: NEXT_PUBLIC_SUPABASE_URL (or VITE_ variant),
- * SUPABASE_SERVICE_ROLE_KEY, and OPENAI_API_KEY (not yet present in this
- * project's .env.local as of this writing — add it before running for real).
+ * Requires in .env.local: NEXT_PUBLIC_SUPABASE_URL (or VITE_ variant) and
+ * SUPABASE_SERVICE_ROLE_KEY. OPENAI_API_KEY is optional (see above).
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -65,14 +72,12 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1)
 }
 if (!OPENAI_API_KEY) {
-  console.error(
-    'Missing OPENAI_API_KEY in .env.local.\n' +
-    'This is the same key sangam-knowledge.ts already checks for before it will\n' +
-    'attempt vector search — without it, every chunk seeded here would have no\n' +
-    'embedding and the semantic search this is for could never find it.\n' +
-    'Add OPENAI_API_KEY=sk-... to .env.local and re-run.'
+  console.log(
+    'No OPENAI_API_KEY found in .env.local — seeding WITHOUT embeddings.\n' +
+    'Chunks will still be inserted and picked up by the chat\'s keyword\n' +
+    'fallback search right away. Add OPENAI_API_KEY later and re-run this\n' +
+    'script to upgrade existing chunks to real vector search in place.\n'
   )
-  process.exit(1)
 }
 
 const client = createClient(SUPABASE_URL, SUPABASE_KEY, { db: { schema: 'sangam' } })
@@ -91,6 +96,7 @@ function chunkMarkdown(md) {
 }
 
 async function getEmbedding(text) {
+  if (!OPENAI_API_KEY) return null
   const res = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
@@ -103,14 +109,14 @@ async function getEmbedding(text) {
   return data.data[0].embedding
 }
 
-async function chunkAlreadyExists(content) {
+async function findExistingChunk(content) {
   const { data } = await client
     .from('knowledge_chunks')
-    .select('id')
+    .select('id, embedding')
     .eq('active', true)
     .eq('content', content)
     .limit(1)
-  return !!(data && data.length > 0)
+  return data && data.length > 0 ? data[0] : null
 }
 
 async function main() {
@@ -125,6 +131,8 @@ async function main() {
   console.log(`Parsed ${chunks.length} section(s) from ${filePath}`)
 
   let inserted = 0
+  let insertedNoEmbedding = 0
+  let backfilled = 0
   let skippedExisting = 0
   let skippedTodo = 0
 
@@ -139,8 +147,26 @@ async function main() {
       continue
     }
 
-    if (await chunkAlreadyExists(chunk.content)) {
-      skippedExisting++
+    const existing = await findExistingChunk(chunk.content)
+
+    if (existing) {
+      // Already seeded. Only action ever taken on an existing row: if it has
+      // no embedding yet and we now have OPENAI_API_KEY, backfill just the
+      // embedding column — never touch anything else on the row.
+      if (!existing.embedding && OPENAI_API_KEY) {
+        try {
+          const embedding = await getEmbedding(chunk.content)
+          const { error } = await client.from('knowledge_chunks').update({ embedding }).eq('id', existing.id)
+          if (error) throw error
+          backfilled++
+          console.log(`  ~ backfilled embedding: ${chunk.heading}`)
+          await new Promise(r => setTimeout(r, 100))
+        } catch (e) {
+          console.warn(`  ! failed to backfill embedding for "${chunk.heading}":`, e.message || e)
+        }
+      } else {
+        skippedExisting++
+      }
       continue
     }
 
@@ -150,21 +176,29 @@ async function main() {
         content: chunk.content,
         category: chunk.category,
         source: 'manual',
-        embedding,
+        embedding, // null when no OPENAI_API_KEY — keyword fallback still finds it
         active: true,
       })
       if (error) throw error
-      inserted++
-      console.log(`  + seeded: ${chunk.heading}`)
-      await new Promise(r => setTimeout(r, 100)) // gentle on the embeddings rate limit
+      if (embedding) inserted++
+      else insertedNoEmbedding++
+      console.log(`  + seeded${embedding ? '' : ' (no embedding — keyword search only)'}: ${chunk.heading}`)
+      if (OPENAI_API_KEY) await new Promise(r => setTimeout(r, 100)) // gentle on the embeddings rate limit
     } catch (e) {
       console.warn(`  ! failed to seed "${chunk.heading}":`, e.message || e)
     }
   }
 
-  console.log(`\nDone. Inserted ${inserted}, skipped ${skippedExisting} (already seeded), skipped ${skippedTodo} (still placeholder text).`)
+  console.log(
+    `\nDone. Inserted ${inserted} with embeddings, ${insertedNoEmbedding} without (keyword-only), ` +
+    `backfilled ${backfilled} embedding(s), skipped ${skippedExisting} (already seeded), ` +
+    `skipped ${skippedTodo} (still placeholder text).`
+  )
   if (skippedTodo > 0) {
     console.log('Fill in the TODOs in sangam-catering-knowledge.md and re-run to seed those sections.')
+  }
+  if (insertedNoEmbedding > 0) {
+    console.log('Add OPENAI_API_KEY to .env.local and re-run this script anytime to upgrade those chunks to real vector search.')
   }
 }
 
