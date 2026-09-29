@@ -633,7 +633,17 @@ export async function getSangamCateringChatContext(): Promise<string> {
     '4. OUTDOOR CATERING PACKAGES & LIVE COUNTERS:',
     ...outdoorMenuLines,
     '',
-    '5. REAL OUTDOOR DISH CATALOG BY CATEGORY (eventmgmt.dish_pricing):',
+    // Bug fix (2026-09-29): this catalog was labeled "OUTDOOR DISH
+    // CATALOG", but `dish`/`dish_pricing` (queried above) carry no
+    // indoor/outdoor flag at all -- it's the SAME shared dish list used
+    // to build indoor packages too, and per Ravi it's mostly indoor-
+    // catalog items to begin with. Labeling it outdoor-exclusive was
+    // telling the AI these were outdoor-only dishes/prices, which is how
+    // indoor items and pricing ended up surfacing inside outdoor quotes.
+    // Relabeled as a shared, general-purpose catalog with an explicit
+    // instruction on when each flow should (and shouldn't) draw from it.
+    '5. GENERAL DISH CATALOG BY CATEGORY (eventmgmt.dish_pricing — NOT flagged indoor/outdoor in the database; shared across both):',
+    '  Usage rule: for INDOOR banquet quotes, use ONLY the priced packages in section 3 above -- do not pull individual dishes from this catalog into an indoor package or its price. This catalog is for (a) building an OUTDOOR custom-tray order from dishes the guest names themselves, and (b) swapping/adding a single dish inside an already-selected package when the guest asks for a substitution.',
     ...(cd.biryanis.length > 0 ? ['  [BIRYANI & RICE TRAYS (1 Tray serves 25-30 pax)]:', ...cd.biryanis.slice(0, 6).map(d => d.text)] : []),
     ...(cd.starters.length > 0 ? ['  [STARTERS & APPETIZERS (1 Tray serves 40-50 pax)]:', ...cd.starters.slice(0, 6).map(d => d.text)] : []),
     ...(cd.curries.length > 0 ? ['  [CURRIES & GRAVIES (1 Tray serves 35-45 pax)]:', ...cd.curries.slice(0, 6).map(d => d.text)] : []),

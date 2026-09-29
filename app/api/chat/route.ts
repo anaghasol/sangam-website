@@ -31,7 +31,11 @@ When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menu
    - Step 1: Occasion Name (e.g. Birthday Party, Housewarming / Gruhapravesam, Wedding / Reception, Corporate Event, Farmhouse Get-together)
    - Step 2: Event Date & Time (Event Date and Lunch / Dinner / Morning service time)
    - Step 3: Guest Count (Pax: 30, 50, 100, 150, 200+ guests)
-   - Step 4: Menu Items / Spread (veg or non-veg standard spread — use the live prices from the block below — or custom dishes)
+   - Step 4: Menu Items / Spread — when the guest asks you to suggest/decide (rather than naming dishes themselves), choose what to offer in this exact priority order, and never skip a tier:
+     1. LIVE OUTDOOR PACKAGE FIRST: if "OUTDOOR CATERING PACKAGES & LIVE COUNTERS" below lists a real package matching the guest's dietary preference, offer THAT package's own price and description — always the first choice when one exists and fits.
+     2. PAST SIMILAR ORDERS NEXT: if no matching live package exists, check "PAST OUTDOOR BOOKINGS" below — if real similar past orders for this occasion are on file, ground your suggested spread in what those orders typically included/spent, and say so naturally (e.g. "for a birthday this size, most of our outdoor guests go with...").
+     3. BUILD FROM THE DISH CATALOG LAST: only if neither tier above gives a real match, build a custom spread yourself from "GENERAL DISH CATALOG BY CATEGORY" below — pick dishes that suit the stated OCCASION (lively, shareable starters + a crowd-pleasing biryani for a Birthday Party; lighter, more formal choices for a Corporate Event; a grander multi-course spread for a Wedding/Reception) and the dietary preference. Every dish named this way MUST come from that catalog — never invent one.
+     Whichever tier you used, price the plate using only real numbers from that tier's data — never an unsourced figure. If the guest names specific dishes themselves, that always overrides all three tiers — see CUSTOM DISHES INTAKE RULE below.
    - Step 5: Delivery Address (full address/venue where the food must be delivered/set up), Customer Name, and Phone/WhatsApp Number — these are MANDATORY before the booking can be confirmed/saved (see MANDATORY CUSTOMER DETAILS section below), but do NOT block the estimation itself — show the estimation first, then ask for these to lock in the booking.
 3. Estimation Rule: The MAIN things needed for estimation are **Pax** and **Items/Menu**.
    - As soon as Pax and Items are provided (or if the customer already included them in their text), IMMEDIATELY generate and display the full Outdoor Catering Estimation!
@@ -341,7 +345,14 @@ export async function POST(req: NextRequest) {
       || (/\bveg\b/i.test(lowerAllText) && !lowerAllText.includes('non-veg') && !lowerAllText.includes('non veg') && !lowerAllText.includes('nonveg'))
     
     const hasBranchDetected = mentionedBranch !== ''
-    const hasDateDetected = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(lowerAllText)
+    // Bug fix (2026-09-29): only matched DAY-then-MONTH ("20 oct") or the
+    // full month word ("october") -- a customer typing MONTH-then-DAY with
+    // the abbreviation ("oct 20", exactly as one guest phrased it live) hit
+    // none of these, so hasDateDetected stayed false, the intake status kept
+    // showing Date as "Pending", and Arjun re-asked a date the guest had
+    // already given. Added the month-then-day form (mirrors the pattern
+    // stripDateNumbers() already uses below) so both orders are recognized.
+    const hasDateDetected = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(lowerAllText)
     const hasSlotDetected = lowerAllText.includes('lunch') || lowerAllText.includes('dinner') || lowerAllText.includes('full day') || (lowerAllText.includes('slot') && (lowerAllText.includes('slot 1') || lowerAllText.includes('slot 2') || lowerAllText.includes('slot 3') || lowerAllText.includes('slot1') || lowerAllText.includes('slot2') || lowerAllText.includes('lunch slot') || lowerAllText.includes('dinner slot')))
     const hasPaxDetected = /\b(\d+)\s*(?:guests?|pax|people|persons|adults)\b/i.test(lowerAllText) || /\bpax\s*\d+\b/i.test(lowerAllText) || rawCount > 0
     const hasPackageDetected = lowerAllText.includes('veg menu') || lowerAllText.includes('non-veg menu') || lowerAllText.includes('grand veg') || lowerAllText.includes('grand non-veg') || lowerAllText.includes('platinum') || lowerAllText.includes('600') || lowerAllText.includes('700') || lowerAllText.includes('800') || lowerAllText.includes('900') || lowerAllText.includes('1000') || lowerAllText.includes('1,000')
@@ -388,7 +399,19 @@ export async function POST(req: NextRequest) {
     const MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
     const detectedTargetMonth = monthNameMatch ? MONTH_ABBR.indexOf(monthNameMatch[1].toLowerCase()) : null
     const hasTimeDetected = /\b(lunch|dinner|breakfast|morning|afternoon|evening|pm|am|\d{1,2}\s*(?:am|pm)|\d{1,2}:\d{2})\b/i.test(lowerAllText)
-    const hasOutdoorItemsDetected = lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('499') || lowerAllText.includes('649') || lowerAllText.includes('popular veg') || lowerAllText.includes('hyderabadi non-veg') || hasCustomDishes || lowerAllText.includes('custom dishes') || lowerAllText.includes('tray sizing')
+    // Bug fix (2026-09-29): a guest who asks Arjun to pick for them
+    // ("suggest me a menu", "what's best for a wedding", "what's famous
+    // here") satisfied none of the keyword checks below, which only ever
+    // matched an explicit selection -- so when the AI call failed and the
+    // scripted fallback took over, it kept re-asking the identical
+    // "which menu spread would you prefer?" line no matter how the guest
+    // reworded the ask (confirmed live: two different phrasings of
+    // "suggest me a wedding menu" both got the exact same line back).
+    // wantsOutdoorSuggestion treats that explicit hand-off as the guest's
+    // choice, so the fallback renders a real quote (grounded in the live
+    // outdoor menu / dietary preference already known) instead of looping.
+    const wantsOutdoorSuggestion = /\b(suggest|recommend(?:ed|ation)?|your (?:choice|pick)|you (?:choose|decide|pick|suggest)|what(?:'s| is) (?:best|good|famous|popular)|best (?:for|option)|most famous|famous (?:for|in|dish)|popular (?:choice|dish|item))\b/i.test(lowerAllText)
+    const hasOutdoorItemsDetected = lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('499') || lowerAllText.includes('649') || lowerAllText.includes('popular veg') || lowerAllText.includes('hyderabadi non-veg') || hasCustomDishes || lowerAllText.includes('custom dishes') || lowerAllText.includes('tray sizing') || wantsOutdoorSuggestion
 
     const lastUserLower = lastUserMsg.toLowerCase()
     const isOutdoorExplicit = lastUserLower.includes('outdoor') || lastUserLower.includes('tray') || lastUserLower.includes('outside') || lastUserLower.includes('catering at home') || lastUserLower.includes('delivery') || lastUserLower.includes('farmhouse') || lastUserLower.includes('spread')
@@ -498,7 +521,8 @@ export async function POST(req: NextRequest) {
       `• Event Time: ${hasTimeDetected ? 'Already Provided' : 'Pending'}\n` +
       `• Guest Count (Pax): ${hasPaxDetected ? `${effectiveAdults} Guests` : 'Pending'}\n` +
       `• Menu / Items: ${hasOutdoorItemsDetected ? 'Selected' : 'Pending'}\n` +
-      `CRITICAL INSTRUCTION: If both Pax and Menu/Items are provided (or if user provided them upfront in text), IMMEDIATELY generate and display the full Outdoor Catering Quote with tray sizing (${liveOutdoorPriceLine}), total amount, included services, and the dish sections (no "[Edit]" tags, no "(Choose any N)" notes)! Otherwise, ask ONLY for the NEXT 'Pending' detail in this exact order: Occasion -> Date & Time -> Pax -> Menu/Items. Never ask for fields that are already provided!`
+      `CRITICAL INSTRUCTION: If both Pax and Menu/Items are provided (or if user provided them upfront in text), IMMEDIATELY generate and display the full Outdoor Catering Quote with tray sizing (${liveOutdoorPriceLine}), total amount, included services, and the dish sections (no "[Edit]" tags, no "(Choose any N)" notes)! Otherwise, ask ONLY for the NEXT 'Pending' detail in this exact order: Occasion -> Date & Time -> Pax -> Menu/Items. Never ask for fields that are already provided!\n` +
+      `MENU/ITEMS SOURCE ORDER when the guest wants a suggestion (not naming dishes themselves): (1) a matching live package from OUTDOOR CATERING PACKAGES above, (2) else what PAST OUTDOOR BOOKINGS above shows similar ${detectedOccasionText || 'occasion'} orders typically included, (3) else build one yourself from GENERAL DISH CATALOG above, picked to suit the stated occasion and diet. Never mix these — use the first tier that actually has real data.`
     ) : (
       `\nCURRENT INTAKE STATUS (INDOOR AC BANQUET HALLS):\n` +
       `• Branch: ${mentionedBranch || 'Not specified yet'}\n` +
@@ -1471,7 +1495,24 @@ export async function POST(req: NextRequest) {
     reply = reply.replace(/\[SAVE_QUOTE:[^\]]+\]/gi, '').trim()
 
     // 7. Generate Contextual Dynamic Suggestion Chips
-    const suggestions = editFlowSuggestions ?? generateDynamicSuggestionsCore(recentMsgs, reply)
+    //
+    // Bug fix (2026-09-29): this used to run on `recentMsgs` (the last-10-
+    // message slice built above for the LLM call, to keep ITS prompt small).
+    // But every flag this function recomputes (isOutdoorFlow, hasBranch,
+    // hasDate, hasPax, hasOccasion, ...) is the SAME state the main handler
+    // above already computes from the FULL conversation (`allMsgs` /
+    // `allUserText`) -- reusing the truncated slice here meant that once a
+    // conversation passed ~10 messages, any fact stated earlier (e.g. "outdoor
+    // catering") fell out of the window: the chips would silently flip back to
+    // indoor branch-selection chips mid-outdoor-flow, and already-answered
+    // questions (date, pax, branch) would resurface as chips because this
+    // function could no longer see the earlier message that answered them.
+    // The actual AI reply never had this bug (it reads intakeStatusContext,
+    // which is always built from the full history) -- only the deterministic
+    // chip logic below it was out of sync. Passing the full `allMsgs` here
+    // fixes that; `recentMsgs` remains as-is for the LLM call itself, which
+    // is a separate, legitimate token-budget trim.
+    const suggestions = editFlowSuggestions ?? generateDynamicSuggestionsCore(allMsgs, reply)
 
     // 8. Log the full transcript for analytics -- every turn, regardless of
     // whether a quote was ever saved (sangam.quotes only ever gets a row
@@ -1514,6 +1555,163 @@ export async function POST(req: NextRequest) {
   }
 }
 
+/**
+ * Reads the bot's OWN reply (not the conversation history) to decide which
+ * quick-action chips belong underneath it -- see the PRIMARY SIGNAL comment
+ * in generateDynamicSuggestionsCore below for why this exists. Matches
+ * against the fixed phrasing SYSTEM_PROMPT and the FB[] scripted fallback
+ * strings mandate for each question/state, so the chips can never visibly
+ * disagree with what the guest is actually looking at for anything that
+ * matches. Returns null (never an empty array) when nothing matches, so the
+ * caller knows to fall back to the history-based scan instead of showing no
+ * chips at all.
+ */
+function deriveChipsFromReply(reply: string): Array<{ label: string; text: string }> | null {
+  if (!reply) return null
+
+  // Booking fully confirmed with a consolidated summary -- nothing left to
+  // ask; offer a fresh start or a direct line to the catering manager.
+  if (/booking summary/i.test(reply)) {
+    return [
+      { label: '🆕 Plan Another Event', text: 'I would like to plan another event' },
+      { label: '📞 Call Catering Manager', text: 'Please connect me with the catering manager' },
+    ]
+  }
+
+  // A full itemized estimate was just shown -- matches the exact headline
+  // text SYSTEM_PROMPT and generatePopularCateringQuote() always use for
+  // this state, plus a broader fallback (venue/hall + a rupee figure) for
+  // an AI-authored indoor reply that didn't reproduce the heading verbatim.
+  const isOutdoorEstimate = /outdoor catering & live food setup estimation|custom outdoor catering quote/i.test(reply)
+  const isIndoorEstimate = /indoor ac banquet hall estimation/i.test(reply)
+    || (/(recommended venue|banquet amenities)/i.test(reply) && /₹/.test(reply))
+  if (isOutdoorEstimate) {
+    return [
+      { label: '✏️ Edit Starters', text: 'I would like to swap and customize the Starters section' },
+      { label: '✏️ Edit Curries', text: 'I would like to swap and customize the Main Curries section' },
+      { label: '✏️ Edit Biryani & Desserts', text: 'I would like to swap and customize Biryani & Desserts' },
+      { label: '🍲 Add Live Dosa Counter', text: 'Can we add a live Dosa and Tiffin counter to this outdoor catering?' },
+      { label: '📱 Save Quote on WhatsApp', text: 'I would like to save this outdoor catering quote for 10 days. My WhatsApp number is ' },
+      { label: '👥 Recalculate for 100 Pax', text: 'Please recalculate this outdoor catering quote for 100 guests' },
+    ]
+  }
+  if (isIndoorEstimate) {
+    return [
+      { label: '✏️ Edit Starters', text: 'I would like to swap and customize the Starters section' },
+      { label: '✏️ Edit Curries', text: 'I would like to swap and customize the Main Curries section' },
+      { label: '✏️ Edit Biryani & Desserts', text: 'I would like to swap and customize Biryani & Desserts' },
+      { label: '📱 Save Quote on WhatsApp', text: 'I would like to save this quote for 10 days. My WhatsApp number is ' },
+      { label: '🏛️ Book Hall Viewing', text: 'Can I schedule a banquet hall visit at the branch?' },
+      { label: '👥 Recalculate for 150 Pax', text: 'Please recalculate this quote for 150 guests' },
+    ]
+  }
+
+  // Asking for dietary preference -- this exact phrase is unique to that
+  // one question (SYSTEM_PROMPT step 5 / fb.indoorDietary).
+  if (/dietary preference/i.test(reply)) {
+    return [
+      { label: '🌿 Pure Veg', text: 'We prefer Pure Vegetarian menu packages' },
+      { label: '🥗 Veg & Non-Veg', text: 'We prefer Veg and Non-Veg menu packages' },
+      { label: '🍗 Non-Veg', text: 'We prefer Non-Veg menu packages' },
+    ]
+  }
+
+  // Presenting Pure Veg or Non-Veg banquet packages to choose from.
+  if (/pure veg banquet packages/i.test(reply)) {
+    return [
+      { label: '🌱 Standard Veg Menu (₹600)', text: 'I would like the standard Veg Menu at ₹600 per plate' },
+      { label: '👑 Grand Veg Menu (₹700)', text: 'I would like the Grand Veg Menu at ₹700 per plate' },
+      { label: '🍗 Switch to Veg & Non-Veg', text: 'Actually, please show me the Veg and Non-Veg menu packages' },
+    ]
+  }
+  if (/non-veg banquet packages/i.test(reply)) {
+    return [
+      { label: '🍗 Standard Non-Veg Menu (₹800)', text: 'I would like the Non-Veg Menu at ₹800 per plate' },
+      { label: '🌟 Grand Non-Veg Menu (₹900)', text: 'I would like the Grand Non-Veg Menu at ₹900 per plate' },
+      { label: '💎 Platinum Non-Veg (₹1,000)', text: 'I would like the Platinum Non-Veg Menu at ₹1,000 per plate' },
+      { label: '🌿 Switch to Pure Veg', text: 'Actually, please show me the Pure Vegetarian menu packages' },
+    ]
+  }
+
+  // Which branch -- unique to the branch question, which always names both.
+  if (/which branch/i.test(reply) && /peerzadiguda/i.test(reply) && /hayathnagar/i.test(reply)) {
+    return [
+      { label: '📍 Peerzadiguda Flagship', text: 'I prefer Peerzadiguda Flagship branch for the banquet hall' },
+      { label: '📍 Hayathnagar HQ', text: 'I prefer Hayathnagar branch for the banquet hall' },
+    ]
+  }
+
+  // Which time slot (indoor) -- "Time Slot" is unique to this question;
+  // outdoor's equivalent question says "Time" without "Slot" (checked next).
+  if (/time slot/i.test(reply)) {
+    return [
+      { label: '☀️ Lunch (11 AM - 3 PM)', text: 'We are planning for Lunch Slot (11:00 AM - 3:00 PM)' },
+      { label: '🌙 Dinner (7 PM - 11 PM)', text: 'We are planning for Dinner Slot (7:00 PM - 11:00 PM)' },
+      { label: '🌅 Full Day (6 AM - 10 PM)', text: 'We need the Full Day Slot (6:00 AM - 10:00 PM)' },
+    ]
+  }
+
+  // What time would the food be served (outdoor).
+  if (/what time|time would you like the food/i.test(reply) && /lunch/i.test(reply) && /dinner/i.test(reply)) {
+    return [
+      { label: '☀️ Lunch (12 PM - 3 PM)', text: 'The event time is Lunch (12:00 PM - 3:00 PM)' },
+      { label: '🌙 Dinner (7:30 PM - 10:30 PM)', text: 'The event time is Dinner (7:30 PM - 10:30 PM)' },
+      { label: '🌅 Morning Breakfast (8 AM - 11 AM)', text: 'The event time is Morning Breakfast (8:00 AM - 11:00 AM)' },
+    ]
+  }
+
+  // Event date question -- identical chip set for indoor and outdoor.
+  if (/event date/i.test(reply)) {
+    return getDynamicDateChips()
+  }
+
+  // Guest count / pax question -- outdoor's version starts lower (30) and
+  // never mentions "Adults + Kids", which only the indoor question states.
+  if (/how many.*guests|guests?\s*\(pax\)/i.test(reply)) {
+    if (/adults\s*\+\s*kids/i.test(reply)) {
+      return [
+        { label: '👥 50 Guests', text: 'We are expecting approximately 50 guests (40 adults + 20 kids)' },
+        { label: '👥 100 Guests', text: 'We are expecting approximately 100 guests' },
+        { label: '👥 150 Guests', text: 'We are expecting approximately 150 guests' },
+        { label: '👥 200 Guests', text: 'We are expecting approximately 200 guests' },
+        { label: '👥 300+ Guests', text: 'We are expecting a grand gathering of 300+ guests' },
+      ]
+    }
+    return [
+      { label: '👥 30 Guests', text: 'We are expecting approximately 30 guests' },
+      { label: '👥 50 Guests', text: 'We are expecting approximately 50 guests' },
+      { label: '👥 100 Guests', text: 'We are expecting approximately 100 guests' },
+      { label: '👥 150 Guests', text: 'We are expecting approximately 150 guests' },
+      { label: '👥 200+ Guests', text: 'We are expecting approximately 200 guests' },
+    ]
+  }
+
+  // Outdoor occasion question.
+  if (/what.*occasion.*planning|which occasion/i.test(reply)) {
+    return [
+      { label: '🎉 Birthday Party', text: 'The occasion is a Birthday Party' },
+      { label: '🏡 Housewarming', text: 'The occasion is Housewarming (Gruhapravesam)' },
+      { label: '💍 Wedding / Reception', text: 'The occasion is a Wedding / Reception' },
+      { label: '💼 Corporate Event', text: 'The occasion is a Corporate Event' },
+      { label: '🌴 Farmhouse / Gathering', text: 'The occasion is a Farmhouse Get-together' },
+    ]
+  }
+
+  // Outdoor menu spread / items question.
+  if (/menu spread or items|which.*menu.*prefer/i.test(reply)) {
+    return [
+      { label: '🌿 Popular Veg Spread (₹499)', text: 'We would like the Popular Veg Spread at ₹499 per plate' },
+      { label: '🍗 Hyderabadi Non-Veg (₹649)', text: 'We would like the Hyderabadi Non-Veg Spread at ₹649 per plate' },
+      { label: '🍛 Custom Dishes & Counters', text: 'I want to select custom dishes and live counters' },
+    ]
+  }
+
+  // No known pattern matched (commonly a non-English reply, or an
+  // AI paraphrase that skipped the mandated wording) -- let the caller
+  // fall back to the history-based scan.
+  return null
+}
+
 function generateDynamicSuggestionsCore(
   messages: Array<{ role: string; content: string }>,
   latestReply: string
@@ -1539,7 +1737,17 @@ function generateDynamicSuggestionsCore(
   } else if (isIndoorExplicit) {
     isOutdoorFlow = false
   } else {
-    isOutdoorFlow = (allUserText.includes('outdoor') || allUserText.includes('tray') || allUserText.includes('delivery') || allUserText.includes('spread')) && !allUserText.includes('indoor') && !allUserText.includes('banquet')
+    // Bug fix (2026-09-29): this whole-conversation fallback used a
+    // DIFFERENT signal set than the main handler's matching fallback
+    // above ('delivery'/generic 'spread' here vs. >=2 named custom dishes
+    // or a specific outdoor-spread phrase there) -- so on a conversation
+    // where neither the last message nor these differing checks agreed,
+    // the two functions could land on OPPOSITE isOutdoorFlow values: the
+    // reply generated for one service type, the chips underneath offering
+    // the other one's steps. Matched to the main handler's formula exactly.
+    const chipHasCustomDishes = extractCustomDishes(allUserText).length >= 2 || extractCustomDishes(lastUserText).length >= 2
+    const chipHasOutdoorSpread = allUserText.includes('veg spread') || allUserText.includes('non-veg spread') || allUserText.includes('tray sizing') || allUserText.includes('andhra vegetarian') || allUserText.includes('dum biryani & non-veg') || allUserText.includes('custom dishes')
+    isOutdoorFlow = (allUserText.includes('outdoor') || allUserText.includes('tray') || chipHasCustomDishes || chipHasOutdoorSpread) && !allUserText.includes('indoor') && !allUserText.includes('banquet')
   }
 
   const hasIndoor = allUserText.includes('indoor') || allUserText.includes('banquet') || allUserText.includes('hall')
@@ -1549,10 +1757,44 @@ function generateDynamicSuggestionsCore(
   // moved past the branch question, but branch-selection chips that kept
   // reappearing underneath as if nothing had been said.
   const hasBranch = allUserText.includes('peerzadiguda') || allUserText.includes('hayathnagar') || allUserText.includes('malkapur') || allUserText.includes('mansoorabad') || allUserText.includes('koyyalagudem')
-  const hasDate = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(allUserText)
+  // Bug fix (2026-09-29): standalone copy of the same month-then-day gap
+  // fixed in the main handler's hasDateDetected above -- "oct 19" wasn't
+  // recognized here either, so the chip logic (which recomputes its own
+  // flags independently) could keep offering date-shortcut chips even
+  // after the AI's own reply had already correctly moved past the date
+  // question. Kept in sync with the main handler's pattern.
+  const hasDate = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(allUserText)
   const hasSlot = allUserText.includes('lunch') || allUserText.includes('dinner') || allUserText.includes('full day') || (allUserText.includes('slot') && (allUserText.includes('slot 1') || allUserText.includes('slot 2') || allUserText.includes('slot 3') || allUserText.includes('slot1') || allUserText.includes('slot2') || allUserText.includes('lunch slot') || allUserText.includes('dinner slot')))
-  const hasPax = /\b(\d+)\s*(?:guests?|pax|people|persons|adults)\b/i.test(allUserText) || /\bpax\s*\d+\b/i.test(allUserText)
-  const hasPackage = allUserText.includes('veg menu') || allUserText.includes('non-veg menu') || allUserText.includes('grand veg') || allUserText.includes('grand non-veg') || allUserText.includes('platinum') || allUserText.includes('₹600') || allUserText.includes('₹700') || allUserText.includes('₹800') || allUserText.includes('₹900') || allUserText.includes('₹1000') || allUserText.includes('₹1,000') || (allUserText.includes('plate') && (allUserText.includes('600') || allUserText.includes('800') || allUserText.includes('900') || allUserText.includes('1000')))
+  // Bug fix (2026-09-29): the main handler's hasPaxDetected (above, in
+  // the POST function) also falls back to a generic bare-number scan
+  // (after stripping date-shaped numbers) so a guest who just types "150"
+  // or "around 150+" -- no trailing "guests"/"pax"/"people" -- still
+  // counts as pax given. This chip-side copy never had that fallback, so
+  // a guest phrasing pax as a bare number moved the actual AI reply on
+  // to the next question while the chips underneath stayed stuck
+  // re-offering the pax (or, worse, the date/time) buttons forever --
+  // the reply and the chips visibly disagreeing. Mirrors the main
+  // handler's stripDateNumbers()+rawCount logic exactly so both paths
+  // agree on the same guest count from the same text.
+  const stripDateNumbersForChips = (text: string): string => {
+    if (!text) return text
+    return text
+      .replace(/\b\d{1,2}\s*(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*,?\s*\d{0,4}\b/gi, ' ')
+      .replace(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{0,4}\b/gi, ' ')
+      .replace(/\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b/g, ' ')
+      .replace(/\b20[2-3]\d\b/g, ' ')
+  }
+  const chipRawCountMatch = stripDateNumbersForChips(lastUserText).match(/\b(?:pax\s*)?(\d{2,4})\b/i) || stripDateNumbersForChips(allUserText).match(/\b(?:pax\s*)?(\d{2,4})\b/i)
+  const hasPax = /\b(\d+)\s*(?:guests?|pax|people|persons|adults)\b/i.test(allUserText) || /\bpax\s*\d+\b/i.test(allUserText) || !!chipRawCountMatch
+  // Bug fix (2026-09-29): required a ₹ symbol (or the word "plate" plus
+  // a narrower number list missing 700) before a bare price counted --
+  // the main handler's hasPackageDetected (above) accepts a bare
+  // "600"/"700"/"800"/"900"/"1000" with no symbol or extra word
+  // needed. A guest who just typed "800" to pick the ₹800 package got
+  // the real estimate in the reply (main handler recognized it) while
+  // the chips underneath stayed stuck on the package-selection step
+  // (this copy didn't). Matched to the main handler exactly.
+  const hasPackage = allUserText.includes('veg menu') || allUserText.includes('non-veg menu') || allUserText.includes('grand veg') || allUserText.includes('grand non-veg') || allUserText.includes('platinum') || allUserText.includes('600') || allUserText.includes('700') || allUserText.includes('800') || allUserText.includes('900') || allUserText.includes('1000') || allUserText.includes('1,000')
 
   // Find latest dietary choice from user messages
   let lastDietary: 'veg' | 'non-veg' | null = null
@@ -1600,9 +1842,42 @@ function generateDynamicSuggestionsCore(
     ]
   }
 
+  // ------------------------------------------------------------------
+  // PRIMARY SIGNAL (2026-09-29): read the bot's own reply before falling
+  // back to re-scanning the conversation history below.
+  //
+  // Every chip decision from here down used to be made by independently
+  // re-detecting "has X been given yet" from the raw conversation text --
+  // a second, separate implementation of the exact same state the main
+  // reply-generation logic (in the POST handler above) already computed
+  // for itself. That's the root cause behind every chip-sync bug fixed in
+  // this file on 2026-09-28/29: hasDate, hasPax, hasPackage, hasOutdoorItems
+  // and the isOutdoorFlow fallback all drifted out of sync with their main-
+  // handler twins at one point or another, each time producing chips that
+  // visibly disagreed with what the bot had just said.
+  //
+  // Chips are now driven FIRST by what's actually on screen -- the reply
+  // itself -- matched against the fixed phrasing Arjun is instructed
+  // (SYSTEM_PROMPT + the FB[] scripted strings) to use for each question/
+  // state. This can't drift out of sync with the reply, because it reads
+  // the reply directly rather than recomputing a parallel guess at the
+  // same state. It only falls through to the history-based scan below --
+  // unchanged, and still kept in sync with the main handler -- when the
+  // reply doesn't match any known pattern (mainly a non-English reply,
+  // since these patterns are English-keyed, or an unusually-phrased AI
+  // paraphrase that skips the mandated wording).
+  const replyDrivenChips = deriveChipsFromReply(latestReply)
+  if (replyDrivenChips) return replyDrivenChips
+
   const hasOccasion = /\b(birthday|housewarming|gruhapravesam|gruhapravesh|wedding|reception|anniversary|corporate|office|farmhouse|get-together|get together|gathering|party|engagement|sangeet|haldi|pooja|puja|cradle ceremony|naming ceremony|celebration|meeting)\b/i.test(allUserText)
   const hasTime = /\b(lunch|dinner|breakfast|morning|afternoon|evening|pm|am|\d{1,2}\s*(?:am|pm)|\d{1,2}:\d{2})\b/i.test(allUserText)
-  const hasOutdoorItems = allUserText.includes('veg spread') || allUserText.includes('non-veg spread') || allUserText.includes('499') || lowerReply.includes('499') || allUserText.includes('649') || lowerReply.includes('649') || allUserText.includes('popular veg') || allUserText.includes('hyderabadi non-veg') || extractCustomDishes(allUserText).length >= 2 || allUserText.includes('custom dishes') || allUserText.includes('tray sizing')
+  // Bug fix (2026-09-29): same fix as hasOutdoorItemsDetected in the main
+  // handler above, kept in sync -- a "suggest me a menu" style request
+  // now counts as items handled here too, so the chips move on to the
+  // estimation-state row instead of repeating the veg/non-veg/custom row
+  // forever underneath a reply that's itself stuck looping.
+  const wantsOutdoorSuggestion = /\b(suggest|recommend(?:ed|ation)?|your (?:choice|pick)|you (?:choose|decide|pick|suggest)|what(?:'s| is) (?:best|good|famous|popular)|best (?:for|option)|most famous|famous (?:for|in|dish)|popular (?:choice|dish|item))\b/i.test(allUserText)
+  const hasOutdoorItems = allUserText.includes('veg spread') || allUserText.includes('non-veg spread') || allUserText.includes('499') || lowerReply.includes('499') || allUserText.includes('649') || lowerReply.includes('649') || allUserText.includes('popular veg') || allUserText.includes('hyderabadi non-veg') || extractCustomDishes(allUserText).length >= 2 || allUserText.includes('custom dishes') || allUserText.includes('tray sizing') || wantsOutdoorSuggestion
 
   // Case 1: Outdoor Catering Flow (Step-by-step: Occasion -> Date -> Time -> Pax -> Items -> Estimation)
   if (isOutdoorFlow) {
