@@ -75,6 +75,51 @@ type DishPricingRow = {
 type BranchRow = {
   id: string
   name: string
+  org_id?: string | null
+  organization_id?: string | null
+}
+
+/**
+ * Sangam Hotels' own organization id in `public.organization`. All branch,
+ * hall, and dish-pricing lookups for this chat MUST be scoped to this org so
+ * that another organization's data sharing the same Supabase project (e.g.
+ * Ripple School, Sangam Bakeries, Sangam Finance) can never surface here,
+ * even if a future row is inserted without a branch, or a branch row without
+ * a hall.
+ */
+export const SANGAM_ORG_ID = '3de89ed2-8a18-4d3c-b048-0b3cf248670f'
+
+let sangamBranchIdsCache: { ids: Set<string>; at: number } | null = null
+
+/**
+ * Returns the set of `branches.id` values that belong to Sangam Hotels
+ * (org_id/organization_id = SANGAM_ORG_ID). Cached alongside the other live
+ * catering data. Read-only; returns an empty set (never null) if the table
+ * can't be reached, so callers naturally fetch zero halls rather than
+ * falling back to "every hall in the table".
+ */
+async function getSangamBranchIds(): Promise<Set<string>> {
+  if (sangamBranchIdsCache && Date.now() - sangamBranchIdsCache.at < TTL_MS) return sangamBranchIdsCache.ids
+  const ids = new Set<string>()
+  const client = sbPublic()
+  if (!client) {
+    sangamBranchIdsCache = { ids, at: Date.now() }
+    return ids
+  }
+  try {
+    const { data, error } = await client
+      .from('branches')
+      .select('id, org_id, organization_id')
+    if (!error && data) {
+      for (const row of data as BranchRow[]) {
+        if (row.org_id === SANGAM_ORG_ID || row.organization_id === SANGAM_ORG_ID) ids.add(row.id)
+      }
+    }
+  } catch (e) {
+    console.warn('Failed fetching Sangam-scoped branch ids — hall data will come back empty rather than unscoped.', e)
+  }
+  sangamBranchIdsCache = { ids, at: Date.now() }
+  return sangamBranchIdsCache.ids
 }
 
 export type DishCategory = 'starters' | 'biryanis' | 'curries' | 'breads' | 'desserts' | 'beverages' | 'others'
@@ -193,10 +238,26 @@ export async function getSangamCateringLiveData(): Promise<CateringLiveData> {
     return data
   }
 
+  // Halls (and, transitively, dish_pricing) are the only eventmgmt tables
+  // with a branch_id, so they're the only ones we can actually scope to
+  // Sangam's org today. menu/dish/occasion have no org or branch column at
+  // all (confirmed clean by manual audit), so they're read as-is.
+  const sangamBranchIds = await getSangamBranchIds()
+
+  // If no Sangam-scoped branch ids were resolvable at all (e.g. the
+  // `branches` table itself was briefly unreachable), we deliberately do
+  // NOT fall back to "every hall in the table" — that fallback is exactly
+  // the cross-org leak this scoping exists to prevent. A transient empty
+  // hall list self-heals on the next cache refresh; a cross-org hall
+  // recommendation does not.
+  const hallQuery = sangamBranchIds.size > 0
+    ? client.from('hall').select('*').eq('is_blocked', false).in('branch_id', Array.from(sangamBranchIds))
+    : Promise.resolve({ data: [] as HallRow[], error: null })
+
   try {
     const [menuRes, hallRes, occRes, dishRes, pricingRes] = await Promise.all([
       client.from('menu').select('*').eq('is_active', true),
-      client.from('hall').select('*').eq('is_blocked', false),
+      hallQuery,
       client.from('occasion').select('name'),
       client.from('dish').select('id, name, dietary_type, unit_type, default_food_group, base_price, is_active').eq('is_active', true),
       client.from('dish_pricing').select('dish_id, unit_label, price, price_per_kg, persons_per_unit, size_variant').eq('is_current_price', true),
@@ -322,11 +383,16 @@ export async function getBranchIdByName(branchName: string): Promise<string | nu
   try {
     const { data, error } = await client
       .from('branches')
-      .select('id, name')
+      .select('id, name, org_id, organization_id')
       .ilike('name', `%${branchName}%`)
-      .limit(1)
+      .limit(5)
     if (error || !data || data.length === 0) return null
-    return (data[0] as BranchRow).id
+    // Only ever resolve to a branch that actually belongs to Sangam Hotels —
+    // several other organizations share this same `branches` table.
+    const sangamMatch = (data as BranchRow[]).find(
+      b => b.org_id === SANGAM_ORG_ID || b.organization_id === SANGAM_ORG_ID
+    )
+    return sangamMatch ? sangamMatch.id : null
   } catch (e) {
     console.warn(`Branch lookup failed for "${branchName}":`, e)
     return null
@@ -371,16 +437,38 @@ export async function getOccasionIdByName(occasionName: string): Promise<string 
  *
  * Cached alongside the other live catering data (20 min TTL).
  */
-let menuBreakdownCache: { map: Map<string, string>; at: number } | null = null
+// Structured (programmatic) form of the same breakdown, one entry per real
+// `eventmgmt.menu` row, used by lib/catering-portions.ts to build the
+// itemized quote customers actually receive — previously that quote used
+// illustrative hardcoded dish lists instead of this real data.
+export type StructuredMenuSection = {
+  categoryName: string
+  sectionName: string
+  selectionLimit: number | null
+  isAddon: boolean
+  isAccompaniment: boolean
+  dishes: Array<{ name: string; dietaryType: string | null; isDefault: boolean; extraPrice: number | null }>
+}
+
+let menuBreakdownCache: { map: Map<string, string>; structured: Map<string, StructuredMenuSection[]>; at: number } | null = null
 
 export async function getIndoorMenuDishBreakdown(): Promise<Map<string, string>> {
-  if (menuBreakdownCache && Date.now() - menuBreakdownCache.at < TTL_MS) return menuBreakdownCache.map
+  return (await getIndoorMenuBreakdownData()).map
+}
+
+export async function getIndoorMenuStructured(): Promise<Map<string, StructuredMenuSection[]>> {
+  return (await getIndoorMenuBreakdownData()).structured
+}
+
+async function getIndoorMenuBreakdownData(): Promise<{ map: Map<string, string>; structured: Map<string, StructuredMenuSection[]> }> {
+  if (menuBreakdownCache && Date.now() - menuBreakdownCache.at < TTL_MS) return menuBreakdownCache
 
   const map = new Map<string, string>()
+  const structured = new Map<string, StructuredMenuSection[]>()
   const client = sbEvent()
   if (!client) {
-    menuBreakdownCache = { map, at: Date.now() }
-    return map
+    menuBreakdownCache = { map, structured, at: Date.now() }
+    return menuBreakdownCache
   }
 
   try {
@@ -393,8 +481,8 @@ export async function getIndoorMenuDishBreakdown(): Promise<Map<string, string>>
     ])
 
     if (!mcRes.data || mcRes.data.length === 0) {
-      menuBreakdownCache = { map, at: Date.now() }
-      return map
+      menuBreakdownCache = { map, structured, at: Date.now() }
+      return menuBreakdownCache
     }
 
     const catNameById = new Map((catRes.data || []).map((c: any) => [c.id, c.name]))
@@ -422,6 +510,7 @@ export async function getIndoorMenuDishBreakdown(): Promise<Map<string, string>>
 
     for (const [menuId, mcRows] of byMenu.entries()) {
       const lines: string[] = []
+      const sectionsForMenu: StructuredMenuSection[] = []
       for (const mc of mcRows) {
         const catName = catNameById.get(mc.category_id) || 'Section'
         const sections = sectionsByMenuCatId.get(mc.id) || []
@@ -430,29 +519,61 @@ export async function getIndoorMenuDishBreakdown(): Promise<Map<string, string>>
         for (const sec of sections) {
           const dishRows = dishesBySectionId.get(sec.id) || []
           if (dishRows.length === 0) continue
-          const limitNote = sec.selection_limit ? ` (choose any ${sec.selection_limit})` : ''
           const addonNote = sec.is_addon ? ' [add-on, extra charge applies]' : ''
           const complimentaryNote = sec.is_accompaniment ? ' [complimentary]' : ''
           const label = sec.display_name || sec.name || 'Options'
-          lines.push(`    • ${label}${limitNote}${addonNote}${complimentaryNote}:`)
-          for (const sd of dishRows) {
+          // No "(choose any N)" label printed — that layout is retired.
+          // Every section still appears; only the dish COUNT shown per
+          // section is capped to its own selection_limit.
+          lines.push(`    • ${label}${addonNote}${complimentaryNote}:`)
+          // Popularity proxy: until a real "most-ordered dish" query against
+          // real booking history exists (booking.menu_selection doesn't yet
+          // store structured per-dish selections — see
+          // lib/sangam-booking-intelligence.ts), `is_default` (what ops
+          // staff flagged as the standard pick for this section) is the
+          // closest real signal we have to "mostly booked", so default
+          // dishes are listed first within each section and are what gets
+          // shown when the section has more dishes than its limit.
+          const sortedDishRows = [...dishRows].sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0))
+          // `sectionDishes` (the structured data) keeps every dish, in case
+          // it's ever needed elsewhere. The text `lines` fed straight into
+          // the AI prompt only shows the section's own "choose any N" count
+          // worth of the most popular/default picks, with nothing else
+          // appended — no limit label, no "more options" note, no mention
+          // of editing (there is no working Edit control).
+          const sectionDishes: StructuredMenuSection['dishes'] = []
+          const textShowCount = sec.selection_limit || 4
+          let textShown = 0
+          for (const sd of sortedDishRows) {
             const d = dishById.get(sd.dish_id)
             if (!d) continue
             const diet = d.dietary_type ? ` [${d.dietary_type}]` : ''
-            const def = sd.is_default ? ' (default)' : ''
             const extra = sd.extra_price ? ` (+₹${sd.extra_price})` : ''
-            lines.push(`      - ${d.name}${diet}${def}${extra}`)
+            if (textShown < textShowCount) {
+              lines.push(`      - ${d.name}${diet}${extra}`)
+              textShown++
+            }
+            sectionDishes.push({ name: d.name, dietaryType: d.dietary_type || null, isDefault: !!sd.is_default, extraPrice: sd.extra_price || null })
           }
+          sectionsForMenu.push({
+            categoryName: catName,
+            sectionName: label,
+            selectionLimit: sec.selection_limit || null,
+            isAddon: !!sec.is_addon,
+            isAccompaniment: !!sec.is_accompaniment,
+            dishes: sectionDishes,
+          })
         }
       }
       if (lines.length > 0) map.set(menuId, lines.join('\n'))
+      if (sectionsForMenu.length > 0) structured.set(menuId, sectionsForMenu)
     }
   } catch (e) {
     console.warn('Failed querying menu_categories/menu_sections/section_dish for dish breakdown — indoor menus will fall back to price-only text.', e)
   }
 
-  menuBreakdownCache = { map, at: Date.now() }
-  return map
+  menuBreakdownCache = { map, structured, at: Date.now() }
+  return menuBreakdownCache
 }
 
 // Verified defaults — used ONLY as text for the AI's context when the live
@@ -513,12 +634,12 @@ export async function getSangamCateringChatContext(): Promise<string> {
     ...outdoorMenuLines,
     '',
     '5. REAL OUTDOOR DISH CATALOG BY CATEGORY (eventmgmt.dish_pricing):',
-    ...(cd.biryanis.length > 0 ? ['  [BIRYANI & RICE TRAYS (1 Tray serves 25-30 pax)]:', ...cd.biryanis.slice(0, 15).map(d => d.text)] : []),
-    ...(cd.starters.length > 0 ? ['  [STARTERS & APPETIZERS (1 Tray serves 40-50 pax)]:', ...cd.starters.slice(0, 15).map(d => d.text)] : []),
-    ...(cd.curries.length > 0 ? ['  [CURRIES & GRAVIES (1 Tray serves 35-45 pax)]:', ...cd.curries.slice(0, 15).map(d => d.text)] : []),
-    ...(cd.breads.length > 0 ? ['  [BREADS & ROTIS]:', ...cd.breads.slice(0, 10).map(d => d.text)] : []),
-    ...(cd.desserts.length > 0 ? ['  [DESSERTS & SWEETS (1 Tray serves 35-40 pax)]:', ...cd.desserts.slice(0, 10).map(d => d.text)] : []),
-    ...(cd.beverages.length > 0 ? ['  [BEVERAGES & WELCOME DRINKS]:', ...cd.beverages.slice(0, 10).map(d => d.text)] : []),
+    ...(cd.biryanis.length > 0 ? ['  [BIRYANI & RICE TRAYS (1 Tray serves 25-30 pax)]:', ...cd.biryanis.slice(0, 6).map(d => d.text)] : []),
+    ...(cd.starters.length > 0 ? ['  [STARTERS & APPETIZERS (1 Tray serves 40-50 pax)]:', ...cd.starters.slice(0, 6).map(d => d.text)] : []),
+    ...(cd.curries.length > 0 ? ['  [CURRIES & GRAVIES (1 Tray serves 35-45 pax)]:', ...cd.curries.slice(0, 6).map(d => d.text)] : []),
+    ...(cd.breads.length > 0 ? ['  [BREADS & ROTIS]:', ...cd.breads.slice(0, 5).map(d => d.text)] : []),
+    ...(cd.desserts.length > 0 ? ['  [DESSERTS & SWEETS (1 Tray serves 35-40 pax)]:', ...cd.desserts.slice(0, 5).map(d => d.text)] : []),
+    ...(cd.beverages.length > 0 ? ['  [BEVERAGES & WELCOME DRINKS]:', ...cd.beverages.slice(0, 5).map(d => d.text)] : []),
     '',
     '6. OCCASIONS COVERED:',
     `  - ${occasionsList.join(', ')}`,
@@ -531,6 +652,15 @@ export async function getSangamCateringChatContext(): Promise<string> {
     '5. When phone number is shared, quote is automatically saved in the database with reference ID (e.g. SGM-XXXX).'
   ].join('\n')
 
-  textCache = { text, at: Date.now() }
-  return text
+  // Hard safety cap — this text was found live to be the single largest
+  // contributor to prompt-size failures (see slice() reductions above). A
+  // cap here protects every future change to this function from silently
+  // breaking the AI cascade again, the same way the uncapped dish lists did.
+  const MAX_CATERING_CONTEXT_CHARS = 6000
+  const cappedText = text.length > MAX_CATERING_CONTEXT_CHARS
+    ? text.slice(0, MAX_CATERING_CONTEXT_CHARS).trim() + '\n[…catalog truncated to keep the prompt within the free AI providers\' size limit — full data still used for the actual price calculations elsewhere in the code]'
+    : text
+
+  textCache = { text: cappedText, at: Date.now() }
+  return cappedText
 }
