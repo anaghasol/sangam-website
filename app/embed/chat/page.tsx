@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { getDynamicArjunGreeting } from "@/lib/greeting";
 import { translateSuggestionLabel } from "@/lib/suggestion-i18n";
+import { getOrCreateChatSessionId } from "@/lib/chat-session";
 
 type ChatMsg = { role: "user" | "assistant"; content: string; displayContent?: string };
 
@@ -142,28 +143,6 @@ const MessageBubble = memo(function MessageBubble({
     </div>
   );
 });
-
-// One id per browser/embed session, kept in sessionStorage so a page
-// refresh mid-conversation still logs to the same sangam.chat_sessions row
-// instead of splitting the transcript across rows. A brand new tab gets a
-// fresh id (sessionStorage, not localStorage) -- intentional, since a new
-// tab is a new conversation for analytics purposes.
-function getOrCreateChatSessionId(): string {
-  if (typeof window === "undefined") return "server";
-  try {
-    const KEY = "sangam_chat_session_id";
-    let id = window.sessionStorage.getItem(KEY);
-    if (!id) {
-      id = `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      window.sessionStorage.setItem(KEY, id);
-    }
-    return id;
-  } catch {
-    // sessionStorage can throw in some embed contexts (privacy mode,
-    // sandboxed iframes) -- fall back to a per-load id rather than crash.
-    return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  }
-}
 
 export default function EmbedChatPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
