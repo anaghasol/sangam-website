@@ -29,7 +29,7 @@
  * catering total reaches ₹X" rule so callers can state it deterministically
  * instead of leaving the AI to guess it from prose.
  */
-import type { CateringLiveData, LiveMenu, LiveHall, StructuredMenuSection } from '@/lib/sangam-catering'
+import type { CateringLiveData, LiveMenu, LiveHall, StructuredMenuSection, DishCategory } from '@/lib/sangam-catering'
 
 export type GuestCountBreakdown = {
   adults: number
@@ -154,13 +154,126 @@ const COMMON_DISH_CATALOG: Record<string, { category: 'starter' | 'biryani' | 'c
 export function extractCustomDishes(text: string): string[] {
   const lower = text.toLowerCase()
   const detected: string[] = []
-  
+
   for (const dishName of Object.keys(COMMON_DISH_CATALOG)) {
     if (lower.includes(dishName)) {
       detected.push(dishName)
     }
   }
   return detected
+}
+
+export type MatchedDish = {
+  /** Real `eventmgmt.dish.id` when the name matched the live DB catalog; null when it only matched the static fallback list below (still worth saving the name, just with no real dish_id to attach). */
+  dishId: string | null
+  name: string
+  dietaryType: string | null
+  quantity: number
+  /**
+   * Real per-unit price from `eventmgmt.dish_pricing` (via `live.dishesByCategory`),
+   * null when this dish only matched the static fallback catalog (no live
+   * row, so no real price exists to use) — never a guessed number.
+   */
+  price: number | null
+  /** How many guests one priced unit (tray/kg/piece) serves, from dish_pricing — null when price is null. */
+  personsPerUnit: number | null
+  unitLabel: string | null
+  /** Live DB category when matched from the real catalog, else the static catalog's own (coarser) category, else 'others'. Used to group dishes and pick a tray-size default when personsPerUnit isn't on file. */
+  category: DishCategory | 'starter' | 'biryani' | 'curry' | 'bread' | 'dessert' | 'side' | 'beverage'
+}
+
+/**
+ * Bug fix (2026-09-30): `extractCustomDishes` only ever matched against the
+ * small hardcoded COMMON_DISH_CATALOG list above, so any dish the AI
+ * actually recommended straight from the live `eventmgmt.dish` /
+ * `eventmgmt.menu` tables (the vast majority of what's shown to a real
+ * customer) was invisible to it — this is why a confirmed quote's
+ * `menu_selection.sections[].items` and `dish_ids` frequently came back
+ * empty even though the customer clearly discussed real dishes. This
+ * matches against the LIVE dish catalog first (so we capture the real
+ * `dish_id`), and only falls back to the static list for names the live
+ * catalog doesn't carry (kept for backwards compatibility / offline data).
+ */
+export function extractDishesFromText(text: string, live?: CateringLiveData, defaultQuantity = 1): MatchedDish[] {
+  if (!text) return []
+  const lower = text.toLowerCase()
+  const matched = new Map<string, MatchedDish>()
+
+  if (live?.dishesByCategory) {
+    for (const dishes of Object.values(live.dishesByCategory)) {
+      for (const d of dishes) {
+        const dishLower = (d.name || '').toLowerCase().trim()
+        if (dishLower.length >= 3 && lower.includes(dishLower) && !matched.has(dishLower)) {
+          matched.set(dishLower, {
+            dishId: d.id,
+            name: d.name,
+            dietaryType: d.dietaryType ?? null,
+            quantity: defaultQuantity,
+            price: d.price,
+            personsPerUnit: d.personsPerUnit,
+            unitLabel: d.unitLabel,
+            category: d.category,
+          })
+        }
+      }
+    }
+  }
+
+  for (const dishName of Object.keys(COMMON_DISH_CATALOG)) {
+    if (lower.includes(dishName) && !matched.has(dishName)) {
+      matched.set(dishName, {
+        dishId: null,
+        name: dishName,
+        dietaryType: COMMON_DISH_CATALOG[dishName].isVeg ? 'veg' : 'non-veg',
+        quantity: defaultQuantity,
+        // No live dish_pricing row for a name that only matched the static
+        // fallback list — never guess a price for it (see pickTrayDefault
+        // + the "pricing to be confirmed" handling in generatePopularCateringQuote).
+        price: null,
+        personsPerUnit: null,
+        unitLabel: null,
+        category: COMMON_DISH_CATALOG[dishName].category,
+      })
+    }
+  }
+
+  return Array.from(matched.values())
+}
+
+// Tray-size defaults (guests served per unit) used ONLY when a matched dish
+// has no real `persons_per_unit` on file — e.g. it only matched the static
+// fallback catalog, not a live `dish_pricing` row. Mirrors the industry
+// portion standards documented at the top of this file.
+const DEFAULT_PERSONS_PER_UNIT: Record<string, number> = {
+  starter: 45, starters: 45,
+  biryani: 28, biryanis: 28,
+  curry: 38, curries: 38,
+  bread: 1, breads: 1, // breads are priced/served per piece, not per tray
+  dessert: 35, desserts: 35,
+  side: 50, sides: 50,
+  beverage: 50,
+  others: 40,
+}
+
+/**
+ * Pulls an explicit, unambiguous event date ("20 Oct 2026") out of free
+ * text, as YYYY-MM-DD. Shared by the early hall-availability lookup (so the
+ * AI can tell an already-booked hall apart from a free one while it's still
+ * recommending one) and the later quote-save step, which previously ran
+ * this same regex inline and only ever saw it after the AI's reply already
+ * existed — far too late to let availability shape which hall gets offered.
+ * Deliberately requires a 4-digit year, same as the original inline regex,
+ * rather than guessing one — a wrong guessed year would make a booking
+ * look available/unavailable for the wrong date entirely.
+ */
+export function extractExplicitEventDate(text: string): string | null {
+  const dateMatch = text.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{4})/i)
+  if (!dateMatch) return null
+  const months: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' }
+  const day = dateMatch[1].padStart(2, '0')
+  const m = months[dateMatch[2].toLowerCase().slice(0, 3)]
+  if (!m) return null
+  return `${dateMatch[3]}-${m}-${day}`
 }
 
 /**
@@ -176,10 +289,28 @@ export function extractCustomDishes(text: string): string[] {
  * `booking.hall_id` — previously nothing set hall_id on a confirmed
  * booking at all.
  */
-export function pickHallForGuestCount(halls: LiveHall[], branchId: string | null, guestCount: number): LiveHall | null {
+// Bug fixes (2026-10-04, event-booking PWA team):
+// 1. When a branch_id WAS given but that branch had no halls of its own,
+//    this silently fell back to `pool = halls` — every hall across every
+//    branch — so it could (and did) hand back a hall belonging to a
+//    completely different branch than the one being booked. A known branch
+//    with no halls on file now returns null instead of guessing.
+// 2. This never checked whether the chosen hall was already booked for the
+//    event date — it only matched on capacity. `bookedHallIds` (from
+//    `getHallsBookedOnDate` in lib/sangam-catering.ts, for the actual
+//    event_date) is now excluded from the pool before picking, so an
+//    already-booked hall is skipped in favor of the next best fit rather
+//    than being recommended or saved as if it were free.
+export function pickHallForGuestCount(
+  halls: LiveHall[],
+  branchId: string | null,
+  guestCount: number,
+  bookedHallIds?: Set<string>
+): LiveHall | null {
   if (!halls || halls.length === 0) return null
-  const branchHalls = branchId ? halls.filter(h => h.branchId === branchId) : []
-  const pool = branchHalls.length > 0 ? branchHalls : halls
+  const pool = (branchId ? halls.filter(h => h.branchId === branchId) : halls)
+    .filter(h => !bookedHallIds || !bookedHallIds.has(h.id))
+  if (pool.length === 0) return null
   const fits = pool.filter(h => (h.maxPax == null || guestCount <= h.maxPax) && (h.minPax == null || guestCount >= h.minPax))
   return fits.length > 0
     ? fits.reduce((best, h) => (h.maxPax ?? Infinity) < (best.maxPax ?? Infinity) ? h : best)
@@ -297,58 +428,92 @@ export function generatePopularCateringQuote(
   sections: StructuredMenuSection[]
 } {
   const customDishes = userMessageText ? extractCustomDishes(userMessageText) : []
-  const hasCustomMenu = customDishes.length >= 2
+  // Bug fix (2026-10-06): this used to gate the whole custom-menu path on
+  // the static COMMON_DISH_CATALOG match count alone, so a guest naming
+  // ≥2 real dishes straight from the live catalog (anything not in that
+  // small static list) never triggered the custom-dish quote at all and
+  // fell through to the generic package-price branch below instead —
+  // taking its price from the wrong place entirely. Matching against the
+  // live catalog too (via extractDishesFromText) fixes the detection, not
+  // just the pricing.
+  const liveMatchedDishes = userMessageText ? extractDishesFromText(userMessageText, live, 1) : []
+  const hasCustomMenu = Math.max(customDishes.length, liveMatchedDishes.length) >= 2
 
+  // Bug fix (2026-10-06): a custom outdoor spread (the guest naming their
+  // own dishes) used to be priced with a flat per-plate GUESS — ₹649/₹499/
+  // ₹399 picked purely from dish COUNT and whether any dish was non-veg,
+  // completely ignoring each dish's real price in `eventmgmt.dish_pricing`.
+  // Per Ravi: there is no fixed outdoor package at all, so pricing MUST
+  // come from the real dish prices — fetch each named dish's live price,
+  // work out how many trays/units that dish needs for this guest count
+  // (using its own real `persons_per_unit` when on file, else the standard
+  // portion default), and sum real line costs instead of a guessed rate.
   if (hasCustomMenu) {
-    const starters: string[] = []
-    const biryanis: string[] = []
-    const curries: string[] = []
-    const breads: string[] = []
-    const desserts: string[] = []
-    const sides: string[] = []
+    const matchedDishes = liveMatchedDishes
     let hasNonVeg = false
+    let pricedSubtotal = 0
+    let anyLivePriced = false
+    const unpriced: string[] = []
 
-    customDishes.forEach(d => {
-      const info = COMMON_DISH_CATALOG[d]
-      if (!info) return
-      const title = d.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-      if (!info.isVeg) hasNonVeg = true
+    type Line = { title: string; category: string; qty: number; unitLabel: string; lineCost: number | null }
+    const lines: Line[] = []
 
-      if (info.category === 'starter') starters.push(title)
-      else if (info.category === 'biryani') biryanis.push(title)
-      else if (info.category === 'curry') curries.push(title)
-      else if (info.category === 'bread') breads.push(title)
-      else if (info.category === 'dessert') desserts.push(title)
-      else sides.push(title)
-    })
+    for (const d of matchedDishes) {
+      const title = d.name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      const categoryKey = String(d.category)
+      if ((d.dietaryType || '').toLowerCase().includes('non')) hasNonVeg = true
 
-    const totalDishes = customDishes.length
-    const bTrays = biryanis.length > 0 ? Math.max(1, Math.ceil(guestCount / (biryanis.length > 1 ? 40 : 28))) : 0
-    const sTrays = starters.length > 0 ? Math.max(1, Math.ceil(guestCount / 45)) : 0
-    const cTrays = curries.length > 0 ? Math.max(1, Math.ceil(guestCount / (totalDishes >= 8 ? 60 : 35))) : 0
-    const dTrays = desserts.length > 0 ? Math.max(1, Math.ceil(guestCount / 35)) : 0
-    const breadCount = breads.length > 0 ? Math.round(guestCount * 2.5) : 0
+      const isPerPieceBread = categoryKey.startsWith('bread')
+      if (isPerPieceBread) {
+        // Breads price/serve per piece (≈2.5 pieces/guest), not per tray.
+        const qty = Math.round(guestCount * 2.5)
+        const lineCost = d.price != null ? qty * d.price : null
+        if (lineCost != null) { pricedSubtotal += lineCost; anyLivePriced = true } else unpriced.push(title)
+        lines.push({ title, category: categoryKey, qty, unitLabel: 'pcs', lineCost })
+        continue
+      }
+
+      const perUnit = d.personsPerUnit ?? DEFAULT_PERSONS_PER_UNIT[categoryKey] ?? DEFAULT_PERSONS_PER_UNIT.others
+      const qty = Math.max(1, Math.ceil(guestCount / perUnit))
+      const lineCost = d.price != null ? qty * d.price : null
+      if (lineCost != null) { pricedSubtotal += lineCost; anyLivePriced = true } else unpriced.push(title)
+      lines.push({ title, category: categoryKey, qty, unitLabel: d.unitLabel || 'Tray', lineCost })
+    }
+
+    const byCategory = (cat: string) => lines.filter(l => l.category === cat || l.category === cat + 's')
+    const starters = byCategory('starter')
+    const biryanis = byCategory('biryani')
+    const curries = byCategory('curry')
+    const breads = byCategory('bread')
+    const desserts = byCategory('dessert')
+    // Catches 'side', 'beverage'/'beverages', and 'others' (anything not
+    // already grouped above) so every priced dish still shows up somewhere
+    // in the readable menu list, not just in the raw tray breakdown.
+    const grouped = new Set([...starters, ...biryanis, ...curries, ...breads, ...desserts])
+    const sides = lines.filter(l => !grouped.has(l))
+
+    const fmtLine = (l: Line) => `${l.title}${l.lineCost != null ? ` — ${l.qty} ${l.unitLabel}${l.qty > 1 ? 's' : ''} × ₹${l.lineCost / l.qty} = ₹${l.lineCost.toLocaleString('en-IN')}` : ` (${l.qty} ${l.unitLabel}${l.qty > 1 ? 's' : ''} — pricing to be confirmed by our catering manager)`}`
 
     const menuItems: string[] = []
-    if (starters.length > 0) menuItems.push(`• Starters: ${starters.join(', ')} (${sTrays} Tray${sTrays > 1 ? 's' : ''} each)`)
-    if (biryanis.length > 0) menuItems.push(`• Rice & Biryani: ${biryanis.join(', ')} (${bTrays} Full Tray${bTrays > 1 ? 's' : ''} ≈5kg each)`)
-    if (curries.length > 0) menuItems.push(`• Curries & Dals: ${curries.join(', ')} (${cTrays} Tray${cTrays > 1 ? 's' : ''} each)`)
-    if (breads.length > 0) menuItems.push(`• Live Breads: ${breads.join(', ')} (${breadCount} pcs live counter)`)
-    if (desserts.length > 0) menuItems.push(`• Sweets & Desserts: ${desserts.join(', ')} (${dTrays} Tray${dTrays > 1 ? 's' : ''})`)
-    if (sides.length > 0) menuItems.push(`• Sides & Accompaniments: ${sides.join(', ')}`)
+    if (starters.length > 0) menuItems.push(`• Starters: ${starters.map(fmtLine).join('; ')}`)
+    if (biryanis.length > 0) menuItems.push(`• Rice & Biryani: ${biryanis.map(fmtLine).join('; ')}`)
+    if (curries.length > 0) menuItems.push(`• Curries & Dals: ${curries.map(fmtLine).join('; ')}`)
+    if (breads.length > 0) menuItems.push(`• Live Breads: ${breads.map(fmtLine).join('; ')}`)
+    if (desserts.length > 0) menuItems.push(`• Sweets & Desserts: ${desserts.map(fmtLine).join('; ')}`)
+    if (sides.length > 0) menuItems.push(`• Sides & Accompaniments: ${sides.map(fmtLine).join('; ')}`)
+    if (unpriced.length > 0) menuItems.push(`• ⚠️ Pricing to be confirmed by our catering manager for: ${unpriced.join(', ')} (not yet on our live price list)`)
 
-    // Calculate approximate per-plate pricing based on spread size
-    let platePrice = hasNonVeg ? 649 : (totalDishes >= 8 ? 499 : 399)
-    if (guestCount <= 30) platePrice += 50 // small batch live setup fee adjustment
-    const subtotal = platePrice * guestCount
+    const subtotal = pricedSubtotal
+    // Display-only average — the real total (subtotal) is the sum of each
+    // dish's own real tray/unit cost, which won't divide evenly across
+    // guests when dishes use different unit sizes. Never used to compute
+    // subtotal itself (that would reintroduce the flat-rate guess this
+    // fixes).
+    const platePrice = guestCount > 0 ? Math.round(subtotal / guestCount) : 0
 
     const trayBreakdown: string[] = [
       `• Guest Count: **${guestCount} Pax** (Custom Menu Sizing)`,
-      ...(bTrays > 0 ? [`• Rice/Biryani Trays: **${bTrays} Full Tray(s) per dish** (feeds 25–30 pax/tray)`] : []),
-      ...(sTrays > 0 ? [`• Starter Trays: **${sTrays} Tray(s) per dish** (feeds 40–50 pax/tray)`] : []),
-      ...(cTrays > 0 ? [`• Curry Trays: **${cTrays} Tray(s) per dish** (feeds 35–45 pax/tray)`] : []),
-      ...(breadCount > 0 ? [`• Live Breads: **${breadCount} Pieces**`] : []),
-      ...(dTrays > 0 ? [`• Dessert Trays: **${dTrays} Tray(s)**`] : [])
+      ...lines.map(l => `• ${l.title}: **${l.qty} ${l.unitLabel}${l.qty > 1 ? 's' : ''}**${l.lineCost != null ? ` — ₹${l.lineCost.toLocaleString('en-IN')}` : ' — pricing to be confirmed'}`)
     ]
 
     return {
@@ -358,9 +523,10 @@ export function generatePopularCateringQuote(
       pricePerPlate: platePrice,
       subtotal,
       finalTotal: subtotal,
-      // Custom, guest-named dishes aren't a DB package lookup — pricing here
-      // is the same per-dish tray-math estimate it always was.
-      usedLiveData: false,
+      // true only once at least one named dish actually priced off a real
+      // eventmgmt.dish_pricing row — false when every matched dish came
+      // from the static fallback catalog (no live price on file at all).
+      usedLiveData: anyLivePriced,
       usedBranchMatchedHall: false,
       usedRealMenuBreakdown: false,
       hallFeeStatus: 'unknown',
@@ -627,9 +793,8 @@ export function generatePopularCateringQuote(
     }
   }
 
-  // Standard suggested spread for Outdoor Catering — prefer a real
-  // eventmgmt.menu row (menu_type = Outdoor) matching the requested diet;
-  // fall back to the ₹499/₹649 generic estimate only if none exists.
+  // No dishes named yet (guest wants Arjun to suggest/decide). Prefer a
+  // real eventmgmt.menu row (menu_type = Outdoor) if one ever exists.
   let liveOutdoorMenu: LiveMenu | undefined
   if (live?.outdoorMenus && live.outdoorMenus.length > 0) {
     const dietFiltered = live.outdoorMenus.filter(m => {
@@ -639,37 +804,101 @@ export function generatePopularCateringQuote(
     })
     liveOutdoorMenu = (dietFiltered.length > 0 ? dietFiltered : live.outdoorMenus)[0]
   }
-  const usedLiveOutdoorPrice = !!liveOutdoorMenu
-  const platePrice = liveOutdoorMenu ? liveOutdoorMenu.pricePerPax : (isVegOnly ? 499 : 649)
-  let subtotal = platePrice * guestCount
-  const menuItems = isVegOnly ? [
-    '### 🍹 Welcome Drinks\n• Fresh Lime Mint Cooler / Sweet Lime Juice',
-    `### 🥗 Starters & Appetizers\n• Paneer 65 & Crispy Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
-    `### 🍛 Main Course Curries\n• Paneer Butter Masala & Dal Tadka (${curryTrays} Full Trays each)`,
-    `### 🍚 Rice & Biryani\n• Signature Hyderabadi Veg Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
-    `### 🫓 Live Tandoor Breads\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
-    `### 🍨 Sweets & Desserts\n• Hot Gulab Jamun & Royal Quarbani Ka Meetha`
-  ] : [
-    '### 🍹 Welcome Drinks\n• Fresh Mint Mojito / Welcome Mocktail',
-    `### 🥗 Starters & Appetizers\n• Hyderabadi Chicken 65 & Veg Manchurian (${starterTrays} Full Trays / 100-120 pcs each)`,
-    `### 🍛 Main Course Curries\n• Butter Chicken & Paneer Butter Masala (${curryTrays} Full Trays each)`,
-    `### 🍚 Rice & Biryani\n• Signature Hyderabadi Chicken Dum Biryani (${biryaniTrays} Full Trays ≈5kg each) + Salan & Raitha`,
-    `### 🫓 Live Tandoor Breads\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site)`,
-    `### 🍨 Sweets & Desserts\n• Royal Double Ka Meetha & Hot Gulab Jamun`
+
+  if (liveOutdoorMenu) {
+    const platePrice = liveOutdoorMenu.pricePerPax
+    let subtotal = platePrice * guestCount
+    const menuItems = [liveOutdoorMenu.description ? `### 📝 ${liveOutdoorMenu.name}\n• ${liveOutdoorMenu.description}` : `### 📝 ${liveOutdoorMenu.name}`]
+    if (extraModifications.length > 0) {
+      extraModifications.forEach(mod => {
+        if (mod.toLowerCase().includes('mutton')) {
+          menuItems.push(`### 🍖 Special Addition\n• Mutton Chukka (${curryTrays} Full Trays)`)
+          subtotal += 120 * guestCount
+        }
+      })
+    }
+    return {
+      headline: `🚚 **Outdoor Catering & Live Food Setup Estimation**`,
+      menuItems,
+      trayBreakdown: [
+        `• Biryani Trays: **${biryaniTrays} Full Trays** (feeds 25–30 pax per tray)`,
+        `• Starter Trays: **${starterTrays} Full Trays** (feeds 40–50 pax per tray)`,
+        `• Curry Trays: **${curryTrays} Full Trays** (feeds 35–45 pax per tray)`,
+        `• Live Tandoor Breads: **${breadCount} Pieces** (prepared live on site)`
+      ],
+      pricePerPlate: platePrice,
+      subtotal,
+      finalTotal: subtotal,
+      usedLiveData: true,
+      usedBranchMatchedHall: false,
+      usedRealMenuBreakdown: false,
+      hallFeeStatus: 'unknown',
+      hallFreeThreshold: null,
+      sections: []
+    }
+  }
+
+  // Bug fix (2026-10-06): with no live outdoor "package" row (there is
+  // none today), this used to charge a flat ₹499 (veg) / ₹649 (non-veg)
+  // per plate for a fixed, hardcoded, illustrative dish list — regardless
+  // of which real dishes actually exist or what they really cost. Per
+  // Ravi: there is no fixed package, so even an AI-suggested spread must
+  // be priced from real `eventmgmt.dish_pricing` rows. This now picks one
+  // representative dish per section from the live dish catalog (matching
+  // the requested diet), prices it for real, and sums actual line costs —
+  // any section with nothing live on file is shown as "to be confirmed"
+  // instead of silently folding a guessed number into the total.
+  const pickLiveDish = (category: DishCategory, wantVeg: boolean) => {
+    const pool = (live?.dishesByCategory?.[category] || []).filter(d => d.price != null)
+    if (pool.length === 0) return null
+    const dietFiltered = pool.filter(d => {
+      const dt = (d.dietaryType || '').toLowerCase()
+      const isVegRow = dt.includes('veg') && !dt.includes('non')
+      return wantVeg ? isVegRow : true
+    })
+    return (dietFiltered.length > 0 ? dietFiltered : pool)[0]
+  }
+
+  const sections: Array<{ label: string; category: DishCategory; fallbackName: string }> = [
+    { label: 'Starters & Appetizers', category: 'starters', fallbackName: isVegOnly ? 'Paneer 65 & Crispy Veg Manchurian' : 'Hyderabadi Chicken 65 & Veg Manchurian' },
+    { label: 'Main Course Curries', category: 'curries', fallbackName: isVegOnly ? 'Paneer Butter Masala & Dal Tadka' : 'Butter Chicken & Paneer Butter Masala' },
+    { label: 'Rice & Biryani', category: 'biryanis', fallbackName: isVegOnly ? 'Signature Hyderabadi Veg Dum Biryani' : 'Signature Hyderabadi Chicken Dum Biryani' },
+    { label: 'Sweets & Desserts', category: 'desserts', fallbackName: isVegOnly ? 'Hot Gulab Jamun & Royal Quarbani Ka Meetha' : 'Royal Double Ka Meetha & Hot Gulab Jamun' },
   ]
+
+  let subtotal = 0
+  let anyPriced = false
+  const menuItems: string[] = [
+    '### 🍹 Welcome Drinks\n• Fresh Mint Mojito / Welcome Mocktail (complimentary)'
+  ]
+  for (const sec of sections) {
+    const dish = pickLiveDish(sec.category, isVegOnly)
+    const perUnit = dish?.personsPerUnit ?? DEFAULT_PERSONS_PER_UNIT[sec.category] ?? DEFAULT_PERSONS_PER_UNIT.others
+    const qty = Math.max(1, Math.ceil(guestCount / perUnit))
+    if (dish && dish.price != null) {
+      const lineCost = qty * dish.price
+      subtotal += lineCost
+      anyPriced = true
+      menuItems.push(`### 🥗 ${sec.label}\n• ${dish.name} (${qty} ${dish.unitLabel || 'Tray'}${qty > 1 ? 's' : ''} × ₹${dish.price} = ₹${lineCost.toLocaleString('en-IN')})`)
+    } else {
+      menuItems.push(`### 🥗 ${sec.label}\n• ${sec.fallbackName} — pricing to be confirmed by our catering manager (not yet on our live price list)`)
+    }
+  }
+  menuItems.push(`### 🫓 Live Tandoor Breads\n• Fresh Butter Naan & Hot Pulkas (${breadCount} pcs live on site — pricing to be confirmed by our catering manager)`)
 
   if (extraModifications.length > 0) {
     extraModifications.forEach(mod => {
       if (mod.toLowerCase().includes('mutton')) {
-        menuItems.push(`### 🍖 Special Addition\n• Mutton Chukka (${curryTrays} Full Trays)`)
-        subtotal += 120 * guestCount
+        menuItems.push(`### 🍖 Special Addition\n• Mutton Chukka (${curryTrays} Full Trays) — pricing to be confirmed by our catering manager`)
       }
     })
   }
 
+  const platePrice = anyPriced && guestCount > 0 ? Math.round(subtotal / guestCount) : 0
+
   return {
-    headline: `🚚 **Outdoor Catering & Live Food Setup Estimation**${usedLiveOutdoorPrice ? '' : ' *(estimated pricing — please confirm with our catering manager)*'}`,
-    menuItems: liveOutdoorMenu?.description ? [...menuItems, `### 📝 Package Notes\n• ${liveOutdoorMenu.description}`] : menuItems,
+    headline: `🚚 **Outdoor Catering & Live Food Setup Estimation**${anyPriced ? ' *(priced from live dish rates — sections marked "to be confirmed" are not yet on our live price list)*' : ' *(no live dish pricing on file yet — every section needs confirmation from our catering manager)*'}`,
+    menuItems,
     trayBreakdown: [
       `• Biryani Trays: **${biryaniTrays} Full Trays** (feeds 25–30 pax per tray)`,
       `• Starter Trays: **${starterTrays} Full Trays** (feeds 40–50 pax per tray)`,
@@ -679,7 +908,7 @@ export function generatePopularCateringQuote(
     pricePerPlate: platePrice,
     subtotal,
     finalTotal: subtotal,
-    usedLiveData: usedLiveOutdoorPrice,
+    usedLiveData: anyPriced,
     usedBranchMatchedHall: false,
     usedRealMenuBreakdown: false,
     hallFeeStatus: 'unknown',

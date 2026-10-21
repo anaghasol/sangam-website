@@ -200,9 +200,89 @@ export async function getIndoorBookingIntelligence(opts: {
 }
 
 /**
- * Outdoor booking-intelligence text block. Deliberately limited today: past
- * outdoor bookings are surfaced for pax/spend CONTEXT only. Per-dish pricing
- * always comes from the live dish_pricing/menu data — never from this.
+ * Bug fix (2026-10-06): there is no real outdoor "menu package" in the
+ * database at all — `eventmgmt.menu` has no outdoor rows today — so when a
+ * guest asks Arjun to suggest/decide the outdoor spread himself, tier 2
+ * ("check what similar past orders typically included") had nothing real
+ * to point to: `getOutdoorBookingIntelligence` below only ever surfaced
+ * average SPEND, never which dishes those past orders actually contained.
+ * That's exactly the "think from past ideas — which dishes get ordered
+ * most for this kind of event" signal Ravi asked for.
+ *
+ * `booking.menu_selection` (saved by app/api/chat/route.ts on every
+ * confirmed booking) already stores each booking's chosen dishes as
+ * `sections[].items[].name` — this mines that real history, counts how
+ * often each dish name shows up across past outdoor bookings (scoped to
+ * the same occasion when known, since what's popular for a birthday and
+ * for a corporate lunch aren't the same thing), and returns the most
+ * frequently chosen ones. Read-only, like the rest of this module.
+ */
+async function getPopularOutdoorDishNames(occasionId: string | null, limit = 8): Promise<Array<{ name: string; count: number }>> {
+  const client = sbEvent()
+  if (!client) return []
+  try {
+    let query = client
+      .from('booking')
+      .select('menu_selection, occasion_id')
+      .eq('service_type', 'outdoor')
+      .neq('status', 'cancelled')
+      .not('menu_selection', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(60)
+    if (occasionId) query = query.eq('occasion_id', occasionId)
+
+    let { data } = await query
+    // An occasion-scoped query with too little history isn't enough to
+    // call anything "popular" — widen to all past outdoor orders rather
+    // than report a trend off 1-2 bookings.
+    if (occasionId && (!data || data.length < 5)) {
+      const broader = await client
+        .from('booking')
+        .select('menu_selection, occasion_id')
+        .eq('service_type', 'outdoor')
+        .neq('status', 'cancelled')
+        .not('menu_selection', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(60)
+      data = broader.data
+    }
+    if (!data || data.length === 0) return []
+
+    const counts = new Map<string, number>()
+    for (const row of data as { menu_selection: any }[]) {
+      const ms = row.menu_selection
+      if (!ms) continue
+      const sections = Array.isArray(ms.sections) ? ms.sections : []
+      const items: any[] = sections.flatMap((s: any) => (Array.isArray(s?.items) ? s.items : []))
+      // Older rows (or a future shape) may keep items flat on menu_selection
+      // itself instead of nested under sections — check both.
+      if (Array.isArray(ms.items)) items.push(...ms.items)
+      for (const item of items) {
+        const name = typeof item?.name === 'string' ? item.name.trim() : ''
+        if (!name) continue
+        counts.set(name, (counts.get(name) || 0) + 1)
+      }
+    }
+    if (counts.size === 0) return []
+
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit)
+  } catch (e) {
+    console.warn('Popular outdoor dish lookup failed (non-fatal):', e)
+    return []
+  }
+}
+
+/**
+ * Outdoor booking-intelligence text block: past-order spend CONTEXT (as
+ * before) PLUS, now, which dishes those past outdoor orders for this
+ * occasion actually contained most often — so a guest asking Arjun to
+ * suggest a spread gets a real, history-grounded answer ("for a wedding
+ * this size, our outdoor guests mostly go with...") instead of either a
+ * fixed made-up package name or a generic guess. Per-dish PRICING still
+ * always comes from the live dish_pricing/menu data, never from here.
  */
 export async function getOutdoorBookingIntelligence(opts: {
   occasionId: string | null
@@ -210,7 +290,15 @@ export async function getOutdoorBookingIntelligence(opts: {
   branchId: string | null
 }): Promise<string> {
   const client = sbEvent()
-  if (!client || opts.pax <= 0) return ''
+  if (!client) return ''
+
+  const popularDishes = await getPopularOutdoorDishNames(opts.occasionId)
+  const popularDishesLine = popularDishes.length > 0
+    ? `\nMOST FREQUENTLY CHOSEN DISHES ON PAST OUTDOOR ORDERS${opts.occasionId ? ' FOR THIS OCCASION' : ''} (real booking history — prefer these when the guest asks you to suggest/decide the spread yourself, but still price each one from the live dish catalog below, never from this count):\n` +
+      popularDishes.map(d => `• ${d.name} (chosen in ${d.count} past order${d.count === 1 ? '' : 's'})`).join('\n')
+    : ''
+
+  if (opts.pax <= 0) return popularDishesLine
 
   try {
     let query = client
@@ -226,7 +314,7 @@ export async function getOutdoorBookingIntelligence(opts: {
     if (opts.branchId) query = query.eq('branch_id', opts.branchId)
 
     const { data } = await query
-    if (!data || data.length === 0) return ''
+    if (!data || data.length === 0) return popularDishesLine
 
     // Forward-compatible hook: the moment menu_selection starts carrying a
     // structured per-dish price breakdown, this is where we'd read it and
@@ -242,14 +330,15 @@ export async function getOutdoorBookingIntelligence(opts: {
     if (perDishPricing) {
       // Not implemented yet — no booking currently stores this shape. Left
       // as a clear extension point for when it does.
-      return `\nPAST OUTDOOR ORDERS WITH RECORDED PER-DISH PRICING FOUND — use that pricing in preference to dish_pricing for this quote.\n${JSON.stringify(perDishPricing)}`
+      return `\nPAST OUTDOOR ORDERS WITH RECORDED PER-DISH PRICING FOUND — use that pricing in preference to dish_pricing for this quote.\n${JSON.stringify(perDishPricing)}` + popularDishesLine
     }
 
     return `\nPAST OUTDOOR BOOKINGS (${data.length} similar, ~${opts.pax} guest range — spend CONTEXT only; these do not carry per-dish pricing yet, so per-dish prices below MUST still come from the live dish/menu pricing, never from this line):` +
-      (avgTotal ? `\n• Average total spend on similar past outdoor orders: ₹${avgTotal.toLocaleString('en-IN')}` : '')
+      (avgTotal ? `\n• Average total spend on similar past outdoor orders: ₹${avgTotal.toLocaleString('en-IN')}` : '') +
+      popularDishesLine
   } catch (e) {
     console.warn('Outdoor booking history lookup failed (non-fatal):', e)
-    return ''
+    return popularDishesLine
   }
 }
 

@@ -118,11 +118,15 @@ export async function searchSangamKnowledgeChunks(userQuery: string, limit = 3):
  * - Banquet Halls & Catering DB (`eventmgmt` schema)
  * - Portion Math & Tray Capacity Rules
  */
-export async function getSangamUnifiedKnowledgeContext(userQuery: string): Promise<string> {
+export async function getSangamUnifiedKnowledgeContext(userQuery: string, branchId?: string | null): Promise<string> {
   const [vectorChunks, salesContext, cateringContext] = await Promise.all([
     searchSangamKnowledgeChunks(userQuery),
     getSangamSalesContext(),
-    getSangamCateringChatContext()
+    // branchId scopes the "INDOOR BANQUET HALLS" section to the branch
+    // already known in this conversation, so this block doesn't hand the
+    // AI an unscoped, org-wide hall list that contradicts route.ts's own
+    // branch-filtered `branchHallContext` block in the same prompt.
+    getSangamCateringChatContext(branchId)
   ])
 
   const portionRules = getCateringPortionRulesText()

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { sortBranchesByNearest } from "@/lib/sangam-branch-distance";
 import { getDynamicArjunGreeting } from "@/lib/greeting";
 import { translateSuggestionLabel } from "@/lib/suggestion-i18n";
+import { getOrCreateChatSessionId } from "@/lib/chat-session";
 
 type Screen = "home" | "menu" | "branches" | "catering" | "rooms" | "about" | "contact" | "order";
 
@@ -441,6 +442,13 @@ export default function SangamHotels() {
   }, [chatLang]);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const chatDatePickerRef = useRef<HTMLInputElement>(null);
+  // Bug fix (2026-09-30): this widget never sent a sessionId to /api/chat,
+  // so the server's chat_sessions logger (which no-ops on an empty
+  // sessionId) silently never saved a single row for conversations that
+  // went through this homepage widget -- the chat surface most customers
+  // actually use. See lib/chat-session.ts for the full story.
+  const chatSessionIdRef = useRef<string>("");
+  if (!chatSessionIdRef.current) chatSessionIdRef.current = getOrCreateChatSessionId();
 
   useEffect(() => {
     function loadReviews() {
@@ -495,7 +503,7 @@ export default function SangamHotels() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })), responseLanguage: chatLang }),
+        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })), responseLanguage: chatLang, sessionId: chatSessionIdRef.current }),
       });
       const data = await res.json();
       setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);

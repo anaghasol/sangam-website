@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSangamUnifiedKnowledgeContext } from '@/lib/sangam-knowledge'
 import { askFreeModels } from '@/lib/free-ai'
 import { lookupCustomerByPhone, extractPhoneNumber } from '@/lib/customer-lookup'
-import { calculateEffectiveGuests, generatePopularCateringQuote, extractCustomDishes, pickHallForGuestCount, matchSectionByText, findDishesInSectionFromText } from '@/lib/catering-portions'
-import { getSangamCateringLiveData, getBranchIdByName, getOccasionIdByName, getIndoorMenuStructured } from '@/lib/sangam-catering'
+import { calculateEffectiveGuests, generatePopularCateringQuote, extractCustomDishes, extractDishesFromText, pickHallForGuestCount, matchSectionByText, findDishesInSectionFromText, extractExplicitEventDate } from '@/lib/catering-portions'
+import { getSangamCateringLiveData, getBranchIdByName, getOccasionIdByName, getIndoorMenuStructured, getHallsBookedOnDate } from '@/lib/sangam-catering'
 import { getIndoorBookingIntelligence, getOutdoorBookingIntelligence } from '@/lib/sangam-booking-intelligence'
 import { createClient } from '@supabase/supabase-js'
 
@@ -33,7 +33,7 @@ When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menu
    - Step 3: Guest Count (Pax: 30, 50, 100, 150, 200+ guests)
    - Step 4: Menu Items / Spread — when the guest asks you to suggest/decide (rather than naming dishes themselves), choose what to offer in this exact priority order, and never skip a tier:
      1. LIVE OUTDOOR PACKAGE FIRST: if "OUTDOOR CATERING PACKAGES & LIVE COUNTERS" below lists a real package matching the guest's dietary preference, offer THAT package's own price and description — always the first choice when one exists and fits.
-     2. PAST SIMILAR ORDERS NEXT: if no matching live package exists, check "PAST OUTDOOR BOOKINGS" below — if real similar past orders for this occasion are on file, ground your suggested spread in what those orders typically included/spent, and say so naturally (e.g. "for a birthday this size, most of our outdoor guests go with...").
+     2. PAST SIMILAR ORDERS NEXT: if no matching live package exists, check "MOST FREQUENTLY CHOSEN DISHES" and "PAST OUTDOOR BOOKINGS" below — if real past orders for this occasion are on file, build the suggested spread from those actual most-chosen dishes (not a guess), and say so naturally (e.g. "for a birthday this size, most of our outdoor guests go with..."). There is currently NO fixed outdoor "package" in the system (no "Popular Veg Spread"/"Hyderabadi Non-Veg Spread" or similar actually exists) — never name or price one as if it were a real package; build the spread dish-by-dish from this tier or the next.
      3. BUILD FROM THE DISH CATALOG LAST: only if neither tier above gives a real match, build a custom spread yourself from "GENERAL DISH CATALOG BY CATEGORY" below — pick dishes that suit the stated OCCASION (lively, shareable starters + a crowd-pleasing biryani for a Birthday Party; lighter, more formal choices for a Corporate Event; a grander multi-course spread for a Wedding/Reception) and the dietary preference. Every dish named this way MUST come from that catalog — never invent one.
      Whichever tier you used, price the plate using only real numbers from that tier's data — never an unsourced figure. If the guest names specific dishes themselves, that always overrides all three tiers — see CUSTOM DISHES INTAKE RULE below.
    - Step 5: Delivery Address (full address/venue where the food must be delivered/set up), Customer Name, and Phone/WhatsApp Number — these are MANDATORY before the booking can be confirmed/saved (see MANDATORY CUSTOMER DETAILS section below), but do NOT block the estimation itself — show the estimation first, then ask for these to lock in the booking.
@@ -53,7 +53,7 @@ When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menu
      * Portion & Tray Sizing breakdown (Biryani trays, Starter trays, Curry trays, Live Tandoor breads)
      * Estimation: ₹Price/plate × Pax = Total Amount (with 5% loyalty discount if returning customer)
      * What's Included: Buffet chafing dishes, warmers, live counter, dedicated serving staff, premium disposable cutlery
-     * Reference ID (e.g. SGM-A8421) and 10-day validity
+     * Reference ID — use the EXACT code given to you below under "ASSIGNED QUOTE REFERENCE CODE" (never invent your own, never reuse one from earlier in this conversation) and 10-day validity
 
 INDOOR BANQUET CONVERSATIONAL WORKFLOW (STRICT SEQUENTIAL INTAKE):
 Always acknowledge earlier details and ask ONLY for the NEXT missing detail in this strict order:
@@ -73,7 +73,7 @@ Always acknowledge earlier details and ask ONLY for the NEXT missing detail in t
    • 🍗 Non-Veg"
 6. Menu Package: Once dietary preference is selected, present only the matching packages (veg-only packages for Pure Veg; non-veg packages for Veg & Non-Veg / Non-Veg) using the exact names and prices from the live pricing block below — never fixed numbers from memory.
 7. Full Estimation & Dish Spread Breakdown: ONLY AFTER the customer selects their menu package, generate the full estimation:
-   - Matching AC Banquet Hall based on pax and branch, chosen from the live hall list below (not a guess).
+   - Matching AC Banquet Hall based on pax and branch, chosen from the live hall list below (not a guess). Never choose or confirm a hall marked "ALREADY BOOKED" for the requested date in that list — pick the next hall that fits instead, or if none fit, say availability for that date will be confirmed by the catering manager at +91 90638 44021.
    - Pricing: Guest count × Plate rate (from the live block) = Total Catering Amount. Only say the hall fee is waived if the live data confirms the catering total meets that hall's free-hall threshold — otherwise say the hall fee will be confirmed.
    - Itemized Dish Spread organized by SECTION — every section of the chosen package must appear, in order. The REAL dish breakdown (real categories, sections, default/most-booked dishes, add-on upcharges) is supplied under that menu's price line in the "REAL DATABASE CATERING & EVENT PRICING" block below — use those exact dishes and section names. Never invent a dish that isn't listed there. If a package has no breakdown listed (older menus not yet in the menu builder), say the exact dish list will be confirmed by the catering manager rather than inventing one.
      - DO NOT list every dish on file for a section, and DO NOT print a "(Choose any N)" note or any "[Edit]" tag anywhere — that layout is retired. The data block below already shows only each section's most-booked/default picks, capped to that section's own limit — reproduce exactly what's shown there, nothing more, nothing less, with no limit label attached.
@@ -205,9 +205,9 @@ async function logChatSession(
  * Indian PIN code (a strong signal the text is an address). Never invents
  * an address — returns null when nothing matches.
  */
-function extractAddress(text: string): string | null {
+export function extractAddress(text: string): string | null {
   if (!text) return null
-  const phraseMatch = text.match(/(?:delivery address|address is|deliver(?:y)?\s*(?:to|at)|venue is|venue address|location is)\s*[:\-]?\s*([^\n]{8,150})/i)
+  const phraseMatch = text.match(/(?:delivery address(?:\s*is)?|address is|deliver(?:y)?\s*(?:to|at)|venue(?:\s*address)?\s*is|location is)\s*[:\-]?\s*([^\n]{8,150})/i)
   if (phraseMatch) return phraseMatch[1].trim().replace(/[.\s]+$/, '')
   const pinLineMatch = text.match(/^[^\n]*\b\d{6}\b[^\n]*$/m)
   if (pinLineMatch) return pinLineMatch[0].trim()
@@ -220,10 +220,11 @@ function extractAddress(text: string): string | null {
  * phone-lookup didn't already resolve a name for a returning customer.
  * Never invents a name.
  */
-function extractCustomerName(text: string): string | null {
+export function extractCustomerName(text: string): string | null {
   if (!text) return null
   const m = text.match(/(?:my name is|this is|i am|i'm|\bname\s*(?:is|:|-)?\s*)\s*([A-Z][a-zA-Z]{1,30}(?:\s+[A-Z][a-zA-Z]{1,30}){0,2})\b/i)
-  return m ? m[1].trim() : null
+  if (!m) return null
+  return m[1].replace(/\s+(?:speaking|here|calling)$/i, '').trim()
 }
 
 export async function POST(req: NextRequest) {
@@ -312,6 +313,10 @@ export async function POST(req: NextRequest) {
         .replace(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{0,4}\b/gi, ' ')
         .replace(/\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b/g, ' ')
         .replace(/\b20[2-3]\d\b/g, ' ')
+        // Strip time patterns (e.g. "7:30 PM", "10:30", "12:00 PM", "11 AM", "3 PM")
+        // so hours/minutes like "30" in 7:30 PM are never misread as guest count (pax)
+        .replace(/\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b/gi, ' ')
+        .replace(/\b\d{1,2}\s*(?:am|pm)\b/gi, ' ')
     }
     const numMatch = stripDateNumbers(lastUserMsg).match(/\b(?:pax\s*)?(\d{2,4})\b/i) || stripDateNumbers(allUserText).match(/\b(?:pax\s*)?(\d{2,4})\b/i)
     const rawCount = numMatch ? parseInt(numMatch[1], 10) : 0
@@ -480,15 +485,30 @@ export async function POST(req: NextRequest) {
       customerName = extractCustomerName(allUserText)
     }
 
+    // Resolved ahead of the Promise.all below (rather than inside it) so
+    // getSangamUnifiedKnowledgeContext can be scoped to the same branch_id
+    // the hall-availability lookup and branchHallContext use — otherwise
+    // the unified-context call and the branch_id resolution would race,
+    // and the AI's prompt would go back to seeing an unscoped hall list.
+    const resolvedBranchId = mentionedBranch ? await getBranchIdByName(mentionedBranch) : null
+
+    // An explicit event date, if the guest has already given one ("20 Oct
+    // 2026") — lets the hall list the AI sees reflect real availability
+    // instead of just capacity. Absent an explicit date, availability can't
+    // be checked yet, so every hall is treated as "availability unknown"
+    // rather than silently assumed free.
+    const earlyDetectedEventDate = extractExplicitEventDate(allUserText)
+
     // 3. Fetch Unified Knowledge Context (RAG, PetPooja, Eventmgmt DB, Portion Rules),
-    // the structured live catering data (real halls/menus/dishes), and the real
-    // branch_id for whichever branch has been mentioned so far — all in parallel.
-    const [extraContext, liveCateringData, resolvedBranchId, resolvedOccasionId, indoorMenuBreakdown] = await Promise.all([
-      getSangamUnifiedKnowledgeContext(lastUserMsg),
+    // the structured live catering data (real halls/menus/dishes), the real
+    // eventmgmt.occasion id, and (bug fix, event-booking PWA team) which halls
+    // are already booked on the detected date — all in parallel.
+    const [extraContext, liveCateringData, resolvedOccasionId, indoorMenuBreakdown, bookedHallIdsOnDate] = await Promise.all([
+      getSangamUnifiedKnowledgeContext(lastUserMsg, resolvedBranchId),
       getSangamCateringLiveData(),
-      mentionedBranch ? getBranchIdByName(mentionedBranch) : Promise.resolve(null),
       detectedOccasionText ? getOccasionIdByName(detectedOccasionText) : Promise.resolve(null),
       getIndoorMenuStructured(),
+      earlyDetectedEventDate ? getHallsBookedOnDate(earlyDetectedEventDate) : Promise.resolve(new Set<string>()),
     ])
 
     // Booking-history grounding (real past events) — only worth the query
@@ -507,11 +527,60 @@ export async function POST(req: NextRequest) {
     const branchHallsForPrompt = resolvedBranchId
       ? liveCateringData.halls.filter(h => h.branchId === resolvedBranchId)
       : []
+    // Bug fix (2026-10-04, event-booking PWA team): the hall list shown to
+    // the AI never said anything about whether a hall was actually free on
+    // the requested date — only capacity. When an explicit date has been
+    // given, mark each hall already booked that day so the AI doesn't
+    // recommend or confirm it as available.
+    const hallLinesWithAvailability = branchHallsForPrompt.map(h => {
+      if (!earlyDetectedEventDate) return h.text
+      return bookedHallIdsOnDate.has(h.id) ? `${h.text} — ALREADY BOOKED on ${earlyDetectedEventDate}, do not offer this hall for that date` : `${h.text} — available on ${earlyDetectedEventDate}`
+    })
     const branchHallContext = mentionedBranch
       ? (branchHallsForPrompt.length > 0
-          ? `\nHALLS AT ${mentionedBranch.toUpperCase()} (only offer halls from this list — this branch's active halls, filtered by branch_id and fitting the guest count where possible):\n${branchHallsForPrompt.map(h => h.text).join('\n')}`
+          ? `\nHALLS AT ${mentionedBranch.toUpperCase()} (only offer halls from this list — this branch's active halls, filtered by branch_id and fitting the guest count where possible${earlyDetectedEventDate ? `; availability shown is for ${earlyDetectedEventDate}` : '; availability not yet checked — no event date given yet'}):\n${hallLinesWithAvailability.join('\n')}`
           : `\nNo active hall is on file in the database for ${mentionedBranch} branch specifically yet — do not name a specific hall for this branch; tell the guest availability will be confirmed by our catering manager at +91 90638 44021.`)
       : ''
+
+    // Bug fix (2026-10-07): when a guest names their own custom dishes
+    // (e.g. a full Andhra-style spread), the AI used to be handed only a
+    // prose instruction ("price it off the closest live spread, adjusted
+    // for dish count") and was left to invent the per-plate rate, the tray
+    // counts, and even the reference ID itself in free text — confirmed
+    // live: it quoted a flat "₹800/plate (Customized Menu)" label and rate
+    // that don't exist anywhere in this codebase, for a menu where none of
+    // the named dishes (Majjiga, Minapa Garelu, Bendakaya Fry, etc.) are on
+    // the live/static catalog at all. `generatePopularCateringQuote` already
+    // has the correct per-dish logic (real live price when on file, else
+    // "pricing to be confirmed" — never a guessed flat rate) — it just was
+    // never actually called for this path. Compute it here and hand the AI
+    // the exact numbers to use verbatim, the same way REAL DATABASE
+    // CATERING & EVENT PRICING grounds the package-price path above.
+    const customMenuQuote = (isOutdoorFlow && hasCustomDishes && effectiveAdults > 0)
+      ? generatePopularCateringQuote('outdoor', mentionedBranch, effectiveAdults, effectiveVegOnly, [], allUserText, liveCateringData)
+      : null
+    const customMenuGroundingContext = customMenuQuote
+      ? `\nCUSTOM MENU — LIVE GROUNDED QUOTE (already computed server-side from real dish pricing — use these EXACT figures and item list verbatim; do NOT recompute, average, guess, or state a different per-plate rate, label, or tray count):\n` +
+        `${customMenuQuote.headline}\n` +
+        `${customMenuQuote.menuItems.join('\n')}\n` +
+        `${customMenuQuote.trayBreakdown.join('\n')}\n` +
+        `• Rate: ₹${customMenuQuote.pricePerPlate}/plate${customMenuQuote.usedLiveData ? '' : ' — *every named dish is pending catering-manager confirmation; do not state a flat ₹/plate rate — say pricing will be confirmed*'}\n` +
+        `• Total Amount: ${effectiveAdults} guests × ₹${customMenuQuote.pricePerPlate} = ₹${customMenuQuote.finalTotal.toLocaleString('en-IN')}\n`
+      : ''
+
+    // Bug fix (2026-10-07): the reference ID shown to the guest used to be
+    // whatever the AI typed, which was frequently the literal "e.g.
+    // SGM-A8421" example copied straight out of this prompt — confirmed
+    // live: two different quotes in the same conversation both got the
+    // identical "SGM-A8421", and that fake code then also got written to
+    // the database further down (see quoteNumber below), because the save
+    // step parses the AI's own reply text for a code instead of using a
+    // real one. Generating one real code per turn here, and instructing
+    // the AI to echo it exactly, means what the guest sees and what gets
+    // saved are the same real code, and it's never a frozen, repeated,
+    // copy-pasted example.
+    const generatedQuoteCode = `SGM-${Math.floor(1000 + Math.random() * 9000)}`
+    const quoteCodeContext = `\nASSIGNED QUOTE REFERENCE CODE (use this EXACT code for this estimate — never invent or reuse a different one): ${generatedQuoteCode}\n`
 
     const intakeStatusContext = isOutdoorFlow ? (
       `\nCURRENT INTAKE STATUS (OUTDOOR CATERING & LIVE FOOD SETUP):\n` +
@@ -522,7 +591,8 @@ export async function POST(req: NextRequest) {
       `• Guest Count (Pax): ${hasPaxDetected ? `${effectiveAdults} Guests` : 'Pending'}\n` +
       `• Menu / Items: ${hasOutdoorItemsDetected ? 'Selected' : 'Pending'}\n` +
       `CRITICAL INSTRUCTION: If both Pax and Menu/Items are provided (or if user provided them upfront in text), IMMEDIATELY generate and display the full Outdoor Catering Quote with tray sizing (${liveOutdoorPriceLine}), total amount, included services, and the dish sections (no "[Edit]" tags, no "(Choose any N)" notes)! Otherwise, ask ONLY for the NEXT 'Pending' detail in this exact order: Occasion -> Date & Time -> Pax -> Menu/Items. Never ask for fields that are already provided!\n` +
-      `MENU/ITEMS SOURCE ORDER when the guest wants a suggestion (not naming dishes themselves): (1) a matching live package from OUTDOOR CATERING PACKAGES above, (2) else what PAST OUTDOOR BOOKINGS above shows similar ${detectedOccasionText || 'occasion'} orders typically included, (3) else build one yourself from GENERAL DISH CATALOG above, picked to suit the stated occasion and diet. Never mix these — use the first tier that actually has real data.`
+      `MENU/ITEMS SOURCE ORDER when the guest wants a suggestion (not naming dishes themselves): (1) a matching live package from OUTDOOR CATERING PACKAGES above, (2) else the MOST FREQUENTLY CHOSEN DISHES / PAST OUTDOOR BOOKINGS above for similar ${detectedOccasionText || 'occasion'} orders, (3) else build one yourself from GENERAL DISH CATALOG above, picked to suit the stated occasion and diet. Never mix these — use the first tier that actually has real data. There is NO real outdoor "package" on file today (no "Popular Veg Spread"/"Hyderabadi Non-Veg Spread" exists) — always name the actual dishes chosen, never a made-up package name.` +
+      customMenuGroundingContext + quoteCodeContext
     ) : (
       `\nCURRENT INTAKE STATUS (INDOOR AC BANQUET HALLS):\n` +
       `• Branch: ${mentionedBranch || 'Not specified yet'}\n` +
@@ -531,7 +601,8 @@ export async function POST(req: NextRequest) {
       `• Guest Count (Pax): ${hasPaxDetected ? `${effectiveAdults} Guests` : 'Pending'}\n` +
       `• Dietary Preference: ${lastDietaryDetected || 'Pending'}\n` +
       `• Menu Package: ${hasPackageDetected ? 'Selected' : 'Pending'}\n` +
-      `CRITICAL INSTRUCTION: Review the CURRENT INTAKE STATUS above. Under NO circumstance should you ask for any field that is 'Already Provided'. Acknowledge the user's latest choice and prompt ONLY for the NEXT 'Pending' step in this exact order: Date -> Time Slot -> Pax -> Dietary -> Menu -> Estimation.`
+      `CRITICAL INSTRUCTION: Review the CURRENT INTAKE STATUS above. Under NO circumstance should you ask for any field that is 'Already Provided'. Acknowledge the user's latest choice and prompt ONLY for the NEXT 'Pending' step in this exact order: Date -> Time Slot -> Pax -> Dietary -> Menu -> Estimation.` +
+      quoteCodeContext
     )
 
     // Language instruction is placed BOTH first and last in the prompt —
@@ -1089,36 +1160,6 @@ export async function POST(req: NextRequest) {
             `• Premium disposable plates, cutlery & napkins\n\n` +
             `Just tell me if you'd like to swap or add anything, or use the quick action chips below.\n\n${outdoorConfirmCta}`
         } else if (!hasOccasionDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
-          const pax = (hasPaxDetected && effectiveAdults > 0) ? effectiveAdults : 50
-          const isVeg = lastDietaryDetected === 'veg' || effectiveVegOnly || lowerAllText.includes('veg spread')
-
-          const quote = generatePopularCateringQuote(
-            'outdoor',
-            mentionedBranch || 'Hyderabad & Suburbs',
-            pax,
-            isVeg,
-            [],
-            lastUserMsg + ' ' + allUserText,
-            liveCateringData
-          )
-
-          const mult = loyaltyDiscount > 0 ? 0.95 : 1.0
-          const totalWithDiscount = Math.round(quote.finalTotal * mult)
-          const discountLine = loyaltyDiscount > 0 ? `\n• **5% Loyalty Discount Applied**: -₹${Math.round(quote.finalTotal * 0.05).toLocaleString('en-IN')}` : ''
-
-          reply = `${quote.headline}\n\n` +
-            `📋 **Menu Spread & Dishes Included**:\n` +
-            `${quote.menuItems.join('\n\n')}\n\n` +
-            `🍛 **Portion & Tray Sizing for ${pax} Guests**:\n` +
-            `${quote.trayBreakdown.join('\n')}\n\n` +
-            `💰 **Estimation**: ₹${quote.pricePerPlate}/plate × ${pax} Guests = **₹${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
-            `✨ **What's Included at Your Venue**:\n` +
-            `• Full-service buffet setup (chafing dishes, warmers, aesthetic buffet tables)\n` +
-            `• Live Tandoor & Roti preparation counter on site\n` +
-            `• Dedicated uniform serving staff\n` +
-            `• Premium disposable plates, cutlery & napkins\n\n` +
-            `Just tell me if you'd like to swap or add anything, or use the quick action chips below.\n\n${outdoorConfirmCta}`
-        } else if (!hasOccasionDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
           reply = fb.outdoorOccasion
         } else if (!hasDateDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
           reply = fb.outdoorDate
@@ -1127,12 +1168,26 @@ export async function POST(req: NextRequest) {
         } else if (!hasPaxDetected) {
           reply = fb.outdoorPax
         } else {
-          // Items missing
+          // Items missing. Bug fix (2026-10-06): there is no real outdoor
+          // "package" in the database — `eventmgmt.menu` has no outdoor
+          // rows today — so this used to invent "Popular Veg Spread" /
+          // "Non-Veg Spread" as if they were real, named, priced packages
+          // whenever liveCateringData.outdoorMenus came back empty (which
+          // it always does right now). Only ever show a real package line
+          // when one genuinely exists; otherwise ask directly for the
+          // dishes and offer the AI's own occasion-based suggestion
+          // instead of a made-up package name.
           const vegOutdoor = liveCateringData.outdoorMenus.find(m => (m.dietaryType || '').toLowerCase().includes('veg') && !(m.dietaryType || '').toLowerCase().includes('non'))
           const nonVegOutdoor = liveCateringData.outdoorMenus.find(m => !(m.dietaryType || '').toLowerCase().includes('veg') || (m.dietaryType || '').toLowerCase().includes('non'))
-          const vegLine = vegOutdoor ? `• 🌿 **${vegOutdoor.name}** (₹${vegOutdoor.pricePerPax}/plate)${vegOutdoor.description ? ` — ${vegOutdoor.description}` : ''}` : `• 🌿 **Popular Veg Spread** (pricing confirmed by our catering manager)`
-          const nonVegLine = nonVegOutdoor ? `• 🍗 **${nonVegOutdoor.name}** (₹${nonVegOutdoor.pricePerPax}/plate)${nonVegOutdoor.description ? ` — ${nonVegOutdoor.description}` : ''}` : `• 🍗 **Non-Veg Spread** (pricing confirmed by our catering manager)`
-          reply = `${fb.outdoorItemsPrompt.replace('{N}', String(effectiveAdults))}\n\n${vegLine}\n${nonVegLine}\n• 🍛 **Custom Dishes & Live Counters** (Build your custom menu)`
+          if (vegOutdoor || nonVegOutdoor) {
+            const vegLine = vegOutdoor ? `• 🌿 **${vegOutdoor.name}** (₹${vegOutdoor.pricePerPax}/plate)${vegOutdoor.description ? ` — ${vegOutdoor.description}` : ''}` : ''
+            const nonVegLine = nonVegOutdoor ? `• 🍗 **${nonVegOutdoor.name}** (₹${nonVegOutdoor.pricePerPax}/plate)${nonVegOutdoor.description ? ` — ${nonVegOutdoor.description}` : ''}` : ''
+            reply = `${fb.outdoorItemsPrompt.replace('{N}', String(effectiveAdults))}\n\n${[vegLine, nonVegLine].filter(Boolean).join('\n')}\n• 🍛 **Custom Dishes & Live Counters** (Build your custom menu)`
+          } else {
+            reply = `${fb.outdoorItemsPrompt.replace('{N}', String(effectiveAdults))}\n\n` +
+              `Tell me the dishes you'd like (starters, curries, biryani, breads, desserts, live counters — anything) and I'll price them from our live dish catalog.\n\n` +
+              `Or just say "suggest for me" and I'll put together a spread suited to your occasion, drawing on what similar past events usually go with.`
+          }
         }
       } else if (!hasBranchDetected) {
         reply = fb.indoorBranch
@@ -1263,24 +1318,23 @@ export async function POST(req: NextRequest) {
 
     if (targetPhone && isExplicitConfirmation && mandatoryDetailsPresent) {
       try {
-        const codeMatch = reply.match(/SGM-?[A-Z0-9]{4,6}/i) || allUserText.match(/SGM-?[A-Z0-9]{4,6}/i)
-        let quoteNumber = codeMatch ? codeMatch[0].toUpperCase() : `SGM-${Math.floor(1000 + Math.random() * 9000)}`
-        if (!quoteNumber.includes('-') && quoteNumber.startsWith('SGM')) {
-          quoteNumber = 'SGM-' + quoteNumber.slice(3)
-        }
+        // Bug fix (2026-10-07): this used to regex-scan the AI's own reply
+        // text for a "SGM-xxxx"-looking substring and save THAT as the real
+        // quote number — which meant a hallucinated or copy-pasted example
+        // code (confirmed live: "SGM-A8421", the literal example that used
+        // to sit in SYSTEM_PROMPT) could get written straight into the
+        // database as if it were a real, unique reference. `generatedQuoteCode`
+        // is now a real code generated once per turn and handed to the AI to
+        // echo verbatim (see quoteCodeContext above), so it's always the
+        // same real code whether read from `reply` or used here directly —
+        // no more parsing the AI's prose to find out what it decided to type.
+        let quoteNumber = generatedQuoteCode
 
         const validUntil = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString()
 
         // Extract date if mentioned or default to 7 days ahead
-        let targetDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
-        const dateMatch = (reply + ' ' + allUserText).match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{4})/i)
-        if (dateMatch) {
-          const months: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' }
-          const day = dateMatch[1].padStart(2, '0')
-          const m = months[dateMatch[2].toLowerCase().slice(0, 3)] || '09'
-          const yr = dateMatch[3]
-          targetDate = `${yr}-${m}-${day}`
-        }
+        const targetDate = extractExplicitEventDate(reply + ' ' + allUserText)
+          || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
 
         // Extract total amount if mentioned
         const totalMatch = (reply + ' ' + allUserText).match(/(?:Grand Total|Total|Amount|₹)\s*[:=–-]?\s*₹?\s*([\d,]+)/i)
@@ -1305,7 +1359,30 @@ export async function POST(req: NextRequest) {
           console.warn(`[Quote Save] Could not resolve branch_id for "${mentionedBranch}" from the branches table — using fallback UUID. Verify the branches table/column names.`)
         }
         const branchId = resolvedBranchId || '6215d413-e566-44a8-b8fd-f2b2d5a90e98'
-        const pickedHallId = isIndoor ? (pickHallForGuestCount(liveCateringData.halls, resolvedBranchId, effectiveAdults || 20)?.id ?? null) : null
+        // Bug fix (2026-10-04, event-booking PWA team): re-check availability
+        // for `targetDate` right before saving — fresh, not the earlier
+        // `bookedHallIdsOnDate` lookup, since `targetDate` can differ from
+        // `earlyDetectedEventDate` (the AI's own reply may have pinned down
+        // a date the guest only gave loosely earlier) and other bookings may
+        // have landed since that earlier lookup ran. A hall already taken on
+        // this date is excluded rather than saved as if it were free.
+        const bookedHallIdsAtSave = await getHallsBookedOnDate(targetDate)
+        const pickedHallId = isIndoor ? (pickHallForGuestCount(liveCateringData.halls, resolvedBranchId, effectiveAdults || 20, bookedHallIdsAtSave)?.id ?? null) : null
+
+        // Bug fix (2026-09-30): dish/menu details going missing on saved
+        // quotes traced to two things — (1) dish matching only checked a
+        // small static list instead of the real live dish catalog, so most
+        // real conversations matched nothing at all, and (2) menu_selection
+        // never carried a real menu_id, only a fixed display name. Both are
+        // fixed here: match against the live catalog first (real dish_id),
+        // and resolve the actual eventmgmt.menu row that priced this quote.
+        const resolvedLiveMenu = dietMatchedLive[0] || liveMenuPool[0] || null
+        const resolvedMenuId = resolvedLiveMenu?.id ?? null
+        const finalGuestCount = effectiveAdults || 20
+        const matchedDishes = extractDishesFromText(allUserText, liveCateringData, finalGuestCount)
+        if (matchedDishes.length === 0) {
+          console.warn(`[Quote Save] No dishes could be matched from the conversation for quote ${quoteNumber ?? '(pending)'} — saving with an empty item list; the raw text is still kept in custom_notes/dishes for manual follow-up.`)
+        }
 
         // Full would-be-booking payload — everything that would eventually
         // be split across eventmgmt.booking / booking_customer /
@@ -1319,8 +1396,10 @@ export async function POST(req: NextRequest) {
           hall_id: pickedHallId,
           service_type: isIndoor ? 'inhouse' : 'outdoor',
           event_date: targetDate,
-          pax: effectiveAdults || 20,
+          pax: finalGuestCount,
+          pax_detected: hasPaxDetected,
           total_amount: calculatedTotal,
+          total_amount_detected: parsedTotal > 0,
           catering_contacts: {
             whatsapp_phone: targetPhone,
             customer_name: customerName || 'Valued Guest',
@@ -1329,15 +1408,21 @@ export async function POST(req: NextRequest) {
             branch: mentionedBranch || 'Hayathnagar / Peerzadiguda'
           },
           menu_selection: {
-            menu_name: isIndoor ? 'Indoor Banquet Catering' : 'Outdoor Custom Catering',
+            menu_id: resolvedMenuId,
+            menu_name: resolvedLiveMenu?.name || (isIndoor ? 'Indoor Banquet Catering' : 'Outdoor Custom Catering'),
             source: 'ai_chatbot',
             sections: [{
               type: 'items',
-              dish_ids: [],
-              items: extractCustomDishes(lastUserMsg + ' ' + allUserText).map(name => ({ name, quantity: effectiveAdults || 20 }))
+              dish_ids: matchedDishes.filter(d => d.dishId).map(d => d.dishId),
+              items: matchedDishes.map(d => ({
+                dish_id: d.dishId,
+                name: d.name,
+                dietary_type: d.dietaryType,
+                quantity: d.quantity
+              }))
             }],
             custom_notes: lastUserMsg.slice(0, 300),
-            guest_count: effectiveAdults || 20
+            guest_count: finalGuestCount
           },
           outdoor_details: !isIndoor ? {
             address_label: targetAddress || '',
@@ -1364,10 +1449,10 @@ export async function POST(req: NextRequest) {
             .upsert({
               quote_number: quoteNumber,
               whatsapp_phone: targetPhone,
-              guest_count: effectiveAdults || 20,
+              guest_count: finalGuestCount,
               event_type: isIndoor ? 'Indoor Banquet Catering' : 'Outdoor Custom Catering',
               event_date: targetDate,
-              dishes: lastUserMsg.slice(0, 500),
+              dishes: matchedDishes.length > 0 ? matchedDishes.map(d => d.name).join(', ') : lastUserMsg.slice(0, 500),
               total_amount: calculatedTotal,
               valid_until: validUntil,
               customer_name: customerName || null,
@@ -1525,7 +1610,9 @@ export async function POST(req: NextRequest) {
       serviceType: isIndoor ? 'inhouse' : 'outdoor',
       phone: targetPhone || detectedPhone,
       branch: mentionedBranch || null,
-      quoteNumber: (reply.match(/SGM-?[A-Z0-9]{4,6}/i) || allUserText.match(/SGM-?[A-Z0-9]{4,6}/i))?.[0]?.toUpperCase() || null,
+      // Same real, server-generated code shown to the guest this turn
+      // (see generatedQuoteCode) -- not re-parsed from the AI's own prose.
+      quoteNumber: generatedQuoteCode || null,
       quoteSaved: !!(targetPhone && isExplicitConfirmation && mandatoryDetailsPresent),
     })
 
@@ -1697,12 +1784,16 @@ function deriveChipsFromReply(reply: string): Array<{ label: string; text: strin
     ]
   }
 
-  // Outdoor menu spread / items question.
+  // Outdoor menu spread / items question. Bug fix (2026-10-06): there is no
+  // real outdoor "package" on file — these used to offer a fixed "Popular
+  // Veg Spread ₹499" / "Hyderabadi Non-Veg ₹649" as if they were real,
+  // selectable packages. Replaced with chips that actually match how
+  // outdoor works today: name your own dishes, or let Arjun suggest a
+  // spread (grounded in past-order history / the live dish catalog).
   if (/menu spread or items|which.*menu.*prefer/i.test(reply)) {
     return [
-      { label: '🌿 Popular Veg Spread (₹499)', text: 'We would like the Popular Veg Spread at ₹499 per plate' },
-      { label: '🍗 Hyderabadi Non-Veg (₹649)', text: 'We would like the Hyderabadi Non-Veg Spread at ₹649 per plate' },
-      { label: '🍛 Custom Dishes & Counters', text: 'I want to select custom dishes and live counters' },
+      { label: '💡 Suggest a Spread for Me', text: 'Please suggest a good menu spread for our event' },
+      { label: '🍛 Custom Dishes & Live Counters', text: 'I want to select custom dishes and live counters' },
     ]
   }
 
@@ -1783,6 +1874,8 @@ function generateDynamicSuggestionsCore(
       .replace(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{0,4}\b/gi, ' ')
       .replace(/\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b/g, ' ')
       .replace(/\b20[2-3]\d\b/g, ' ')
+      .replace(/\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b/gi, ' ')
+      .replace(/\b\d{1,2}\s*(?:am|pm)\b/gi, ' ')
   }
   const chipRawCountMatch = stripDateNumbersForChips(lastUserText).match(/\b(?:pax\s*)?(\d{2,4})\b/i) || stripDateNumbersForChips(allUserText).match(/\b(?:pax\s*)?(\d{2,4})\b/i)
   const hasPax = /\b(\d+)\s*(?:guests?|pax|people|persons|adults)\b/i.test(allUserText) || /\bpax\s*\d+\b/i.test(allUserText) || !!chipRawCountMatch
@@ -1929,19 +2022,22 @@ function generateDynamicSuggestionsCore(
       ]
     }
 
-    // F. Step 5: Menu Items / Spread (if not provided)
+    // F. Step 5: Menu Items / Spread (if not provided). Bug fix
+    // (2026-10-06): no real outdoor package exists on file — see the fixes
+    // above deriveChipsFromReply — so these no longer offer a fixed
+    // "Popular Veg Spread ₹499" / "Hyderabadi Non-Veg ₹649" as if it were
+    // real and selectable.
     if (!hasOutdoorItems) {
       return [
-        { label: '🌿 Popular Veg Spread (₹499)', text: 'We would like the Popular Veg Spread at ₹499 per plate' },
-        { label: '🍗 Hyderabadi Non-Veg (₹649)', text: 'We would like the Hyderabadi Non-Veg Spread at ₹649 per plate' },
+        { label: '💡 Suggest a Spread for Me', text: 'Please suggest a good menu spread for our event' },
         { label: '🍛 Custom Dishes & Counters', text: 'I want to select custom dishes and live counters' },
       ]
     }
 
     // Default outdoor estimation chips
     return [
-      { label: '🌿 Pure Veg Spread (₹499)', text: 'Please recalculate for Pure Veg Spread at ₹499 per plate' },
-      { label: '🍗 Non-Veg Spread (₹649)', text: 'Please recalculate for Hyderabadi Non-Veg Spread at ₹649 per plate' },
+      { label: '💡 Suggest More Dishes', text: 'Please suggest a couple more dishes to add to this spread' },
+      { label: '🍛 Change the Dishes', text: 'I would like to change some of the dishes in this spread' },
       { label: '👥 50 Guests', text: 'Please recalculate this outdoor catering quote for 50 guests' },
       { label: '👥 100 Guests', text: 'Please recalculate this outdoor catering quote for 100 guests' },
       { label: '🍲 Add Live Dosa Counter', text: 'Can we add a live Dosa and Tiffin counter to this outdoor catering?' },

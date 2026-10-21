@@ -82,6 +82,13 @@ const PROVIDERS: Provider[] = [
     ),
   },
   {
+    // OpenAI direct — tried second if OmniRoute is not available or fails
+    name: 'openai',
+    keys: () => [process.env.OPENAI_API_KEY],
+    models: ['gpt-4o-mini', 'gpt-4o'],
+    call: (k, m, s, msgs) => openaiStyle('https://api.openai.com/v1/chat/completions', k, m, s, msgs),
+  },
+  {
     name: 'groq',
     keys: () => [process.env.GROQ_API_KEY],
     models: ['openai/gpt-oss-120b', 'groq/compound-mini', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'groq/compound'],

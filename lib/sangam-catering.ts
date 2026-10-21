@@ -178,7 +178,10 @@ const emptyDishBuckets = (): Record<DishCategory, LiveDish[]> => ({
 })
 
 let liveCache: { data: CateringLiveData; at: number } | null = null
-let textCache: { text: string; at: number } | null = null
+// Keyed by branch_id ('__all__' when no branch is known yet) so a cached
+// org-wide list from an earlier, branch-less turn is never served back for
+// a conversation that has since named a branch (see getSangamCateringChatContext).
+const textCache = new Map<string, { text: string; at: number }>()
 const TTL_MS = 20 * 60 * 1000 // Cache for 20 minutes
 
 function sbEvent() {
@@ -369,6 +372,46 @@ export async function getSangamCateringLiveData(): Promise<CateringLiveData> {
 
   liveCache = { data, at: Date.now() }
   return data
+}
+
+/**
+ * Bug fix (2026-10-04): the chat never checked whether a hall it was about
+ * to recommend or save a booking against was already booked for that date —
+ * `pickHallForGuestCount` (lib/catering-portions.ts) only ever matched on
+ * capacity, so it could (and, per the event-booking PWA team, did) offer or
+ * even save a hall that was already taken on the requested event_date.
+ *
+ * Returns the set of `hall_id`s that already have a non-cancelled
+ * `eventmgmt.booking` row for `eventDate`, so callers can filter them out
+ * before recommending or confirming a hall. Deliberately NOT cached
+ * alongside the 20-minute hall/menu cache above — availability changes with
+ * every new booking, so this is always a fresh read. Read-only, like the
+ * rest of this file; returns an empty set (never throws) if the table can't
+ * be reached, since a lookup failure should never silently block every
+ * hall — it just means the AI can't vouch for availability that turn and
+ * should say so rather than guessing.
+ */
+export async function getHallsBookedOnDate(eventDate: string): Promise<Set<string>> {
+  const booked = new Set<string>()
+  if (!eventDate) return booked
+  const client = sbEvent()
+  if (!client) return booked
+  try {
+    const { data, error } = await client
+      .from('booking')
+      .select('hall_id, status')
+      .eq('event_date', eventDate)
+      .not('hall_id', 'is', null)
+      .neq('status', 'cancelled')
+    if (!error && data) {
+      for (const row of data as { hall_id: string | null; status: string }[]) {
+        if (row.hall_id) booked.add(row.hall_id)
+      }
+    }
+  } catch (e) {
+    console.warn(`Hall availability lookup failed for ${eventDate} — treating all halls as unknown availability rather than blocking the flow.`, e)
+  }
+  return booked
 }
 
 /**
@@ -592,16 +635,37 @@ const FALLBACK_OCCASIONS = ['Weddings', 'Engagements', 'Receptions', 'Birthdays'
 
 /**
  * Returns formatted Indoor & Outdoor Catering context for Arjun (Chat AI assistant).
+ *
+ * Bug fix (2026-10-04): this always listed EVERY active hall across ALL
+ * Sangam branches (org-wide), with no branch scoping at all, even though
+ * route.ts separately builds a correctly branch_id-filtered hall list
+ * (`branchHallContext`) once a branch is known. Having both blocks in the
+ * same prompt — one scoped, one not — let the AI pick up a hall from the
+ * unscoped "section 2" list and recommend/quote a hall that belongs to a
+ * completely different branch than the one the guest is actually talking
+ * about. `branchId`, when passed (the resolved branch_id for whatever
+ * branch has been mentioned so far), now filters this section down to that
+ * branch's own halls, the same way branchHallContext does. With no branch
+ * known yet, it still shows the full org-wide list (there's nothing to
+ * scope to), but that's no longer the ONLY list the AI sees once a branch
+ * is named.
  */
-export async function getSangamCateringChatContext(): Promise<string> {
-  if (textCache && Date.now() - textCache.at < TTL_MS) return textCache.text
+export async function getSangamCateringChatContext(branchId?: string | null): Promise<string> {
+  const cacheKey = branchId || '__all__'
+  const cached = textCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < TTL_MS) return cached.text
 
   const [live, dishBreakdownMap] = await Promise.all([
     getSangamCateringLiveData(),
     getIndoorMenuDishBreakdown(),
   ])
 
-  const hallLines = live.hasLiveHalls ? live.halls.map(h => h.text) : FALLBACK_HALLS_TEXT
+  const hallsInScope = branchId ? live.halls.filter(h => h.branchId === branchId) : live.halls
+  const hallLines = live.hasLiveHalls
+    ? (branchId && hallsInScope.length === 0
+        ? ['• No active hall is on file in the database for this branch specifically yet — do not name a specific hall here; tell the guest availability will be confirmed by our catering manager at +91 90638 44021.']
+        : hallsInScope.map(h => h.text))
+    : FALLBACK_HALLS_TEXT
   const indoorMenuLines = live.indoorMenus.length > 0 ? live.indoorMenus.flatMap(m => {
     const breakdown = dishBreakdownMap.get(m.id)
     return breakdown ? [m.text, breakdown] : [m.text]
@@ -671,6 +735,6 @@ export async function getSangamCateringChatContext(): Promise<string> {
     ? text.slice(0, MAX_CATERING_CONTEXT_CHARS).trim() + '\n[…catalog truncated to keep the prompt within the free AI providers\' size limit — full data still used for the actual price calculations elsewhere in the code]'
     : text
 
-  textCache = { text: cappedText, at: Date.now() }
+  textCache.set(cacheKey, { text: cappedText, at: Date.now() })
   return cappedText
 }

@@ -142,7 +142,7 @@ export function extractPhoneNumber(text: string): string | null {
   if (!text) return null
   // Match +91-XXXXXXXXXX or 10-digit number starting with 6, 7, 8, 9
   const cleaned = text.replace(/[\s\-\(\)]/g, '')
-  const match = cleaned.match(/(?:\+91|91)?([6-9]\d{9})\b/)
+  const match = cleaned.match(/(?:(?<=\D)|^)(?:\+91|91)?([6-9]\d{9})(?!\d)/)
   return match ? match[1] : null
 }
 
