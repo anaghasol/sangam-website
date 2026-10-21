@@ -205,9 +205,9 @@ async function logChatSession(
  * Indian PIN code (a strong signal the text is an address). Never invents
  * an address — returns null when nothing matches.
  */
-function extractAddress(text: string): string | null {
+export function extractAddress(text: string): string | null {
   if (!text) return null
-  const phraseMatch = text.match(/(?:delivery address|address is|deliver(?:y)?\s*(?:to|at)|venue is|venue address|location is)\s*[:\-]?\s*([^\n]{8,150})/i)
+  const phraseMatch = text.match(/(?:delivery address(?:\s*is)?|address is|deliver(?:y)?\s*(?:to|at)|venue(?:\s*address)?\s*is|location is)\s*[:\-]?\s*([^\n]{8,150})/i)
   if (phraseMatch) return phraseMatch[1].trim().replace(/[.\s]+$/, '')
   const pinLineMatch = text.match(/^[^\n]*\b\d{6}\b[^\n]*$/m)
   if (pinLineMatch) return pinLineMatch[0].trim()
@@ -220,10 +220,11 @@ function extractAddress(text: string): string | null {
  * phone-lookup didn't already resolve a name for a returning customer.
  * Never invents a name.
  */
-function extractCustomerName(text: string): string | null {
+export function extractCustomerName(text: string): string | null {
   if (!text) return null
   const m = text.match(/(?:my name is|this is|i am|i'm|\bname\s*(?:is|:|-)?\s*)\s*([A-Z][a-zA-Z]{1,30}(?:\s+[A-Z][a-zA-Z]{1,30}){0,2})\b/i)
-  return m ? m[1].trim() : null
+  if (!m) return null
+  return m[1].replace(/\s+(?:speaking|here|calling)$/i, '').trim()
 }
 
 export async function POST(req: NextRequest) {
