@@ -624,13 +624,6 @@ async function getIndoorMenuBreakdownData(): Promise<{ map: Map<string, string>;
 // sane to say. These are never used for the actual quote math; see
 // lib/catering-portions.ts, which requires live data or falls back to a
 // clearly-generic estimate instead of these numbers.
-const FALLBACK_HALLS_TEXT = [
-  '• (fallback — no live hall data) SANGAMAM Hall (Peerzadiguda 4th Floor): 250–500 pax, Grand AC Banquet',
-  '• (fallback — no live hall data) ARANGAM / MAGUDAM Hall (Peerzadiguda 3rd Floor): 100–150 pax, AC Banquet',
-  '• (fallback — no live hall data) MADURAM Hall (Peerzadiguda 1st Floor): 50–100 pax, AC Banquet',
-  '• (fallback — no live hall data) Classic Hall (Peerzadiguda Ground Floor): Up to 220 pax, AC Banquet',
-  '• (fallback — no live hall data) HAYATHNAGAR SANGAM Hall (Hayathnagar 2nd Floor): 50–200 pax, AC Banquet',
-]
 const FALLBACK_OCCASIONS = ['Weddings', 'Engagements', 'Receptions', 'Birthdays', 'Corporate Meetings', 'House Parties', 'Anniversaries']
 
 /**
@@ -650,8 +643,8 @@ const FALLBACK_OCCASIONS = ['Weddings', 'Engagements', 'Receptions', 'Birthdays'
  * scope to), but that's no longer the ONLY list the AI sees once a branch
  * is named.
  */
-export async function getSangamCateringChatContext(branchId?: string | null): Promise<string> {
-  const cacheKey = branchId || '__all__'
+export async function getSangamCateringChatContext(branchId?: string | null, focus?: 'outdoor'): Promise<string> {
+  const cacheKey = `${branchId || '__all__'}${focus === 'outdoor' ? ':outdoor' : ''}`
   const cached = textCache.get(cacheKey)
   if (cached && Date.now() - cached.at < TTL_MS) return cached.text
 
@@ -660,13 +653,22 @@ export async function getSangamCateringChatContext(branchId?: string | null): Pr
     getIndoorMenuDishBreakdown(),
   ])
 
-  const hallsInScope = branchId ? live.halls.filter(h => h.branchId === branchId) : live.halls
-  const hallLines = live.hasLiveHalls
-    ? (branchId && hallsInScope.length === 0
-        ? ['• No active hall is on file in the database for this branch specifically yet — do not name a specific hall here; tell the guest availability will be confirmed by our catering manager at +91 90638 44021.']
-        : hallsInScope.map(h => h.text))
-    : FALLBACK_HALLS_TEXT
-  const indoorMenuLines = live.indoorMenus.length > 0 ? live.indoorMenus.flatMap(m => {
+  // Strict branch scoping (2026-10-23): halls are only ever listed for the
+  // branch the guest picked. Before a branch is chosen — or if it couldn't be
+  // resolved to a branch_id — no hall is listed at all (this used to show
+  // every branch's halls, and the hardcoded FALLBACK_HALLS_TEXT names when
+  // the hall table was unreachable), so the AI can't offer a hall from a
+  // branch the guest didn't choose.
+  const hallsInScope = branchId ? live.halls.filter(h => h.branchId === branchId) : []
+  const hallLines = !branchId
+    ? ['• Branch not selected yet — do NOT name or suggest any hall. Ask which branch the guest prefers first; halls are shown only for the chosen branch.']
+    : hallsInScope.length > 0
+      ? hallsInScope.map(h => h.text)
+      : ['• No active hall is on file for this branch — do not name a specific hall; tell the guest our catering manager at +91 90638 44021 will finalize the hall with them.']
+  // Outdoor conversations never see the indoor banquet packages, their dish
+  // breakdowns or the hall list (2026-10-25): with them in the prompt, "suggest
+  // me a menu" for an outdoor event was answered with an indoor package.
+  const indoorMenuLines = focus === 'outdoor' ? ['• (not applicable — this is an OUTDOOR catering conversation. Never offer, name or price an indoor banquet package or hall.)'] : live.indoorMenus.length > 0 ? live.indoorMenus.flatMap(m => {
     const breakdown = dishBreakdownMap.get(m.id)
     return breakdown ? [m.text, breakdown] : [m.text]
   }) : [
@@ -688,9 +690,7 @@ export async function getSangamCateringChatContext(branchId?: string | null): Pr
     '  - `outdoor`: Outdoor Catering for Lawns, Event Venues, Home Functions & Live Counter Setups',
     '  - `inhouse-meeting`: Corporate Meetings, Conferences & Executive Banquet Sessions',
     '',
-    '2. INDOOR BANQUET HALLS & CAPACITIES:',
-    ...hallLines,
-    '',
+    ...(focus === 'outdoor' ? [] : ['2. INDOOR BANQUET HALLS & CAPACITIES:', ...hallLines, '']),
     '3. INDOOR CATERING MENUS & PER-PLATE PRICES:',
     ...indoorMenuLines,
     '',
@@ -723,7 +723,7 @@ export async function getSangamCateringChatContext(branchId?: string | null): Pr
     '2. STEP 2 — COLLECT EVENT DETAILS: Event date, location/branch, guest count (Adults + Kids). Apply 2 kids = 1 adult math.',
     '3. STEP 3 — CALCULATE ITEMIZED TRAY OR PACKAGE ESTIMATE: Use exact tray or per-plate pricing from the real catalog above — never a number you are not shown here.',
     '4. STEP 4 — SAVING QUOTE: Offer to save the quote for 10 days by asking for their WhatsApp number.',
-    '5. When phone number is shared, quote is automatically saved in the database with reference ID (e.g. SGM-XXXX).'
+    '5. When phone number is shared, quote is automatically saved in the database with booking code as the reference ID (e.g. PA05113210 for indoor, OC17043210 for outdoor).'
   ].join('\n')
 
   // Hard safety cap — this text was found live to be the single largest

@@ -68,10 +68,40 @@ export const SUGGESTION_LABEL_TR: Record<string, { te: string; hi: string }> = {
   '🍨 Add Qubani Ka Meetha': { te: '🍨 ఖుబానీ కా మీఠా జోడించండి', hi: '🍨 क़ुबानी का मीठा जोड़ें' },
   '🍨 Add Gulab Jamun & Ice Cream': { te: '🍨 గులాబ్ జామున్ & ఐస్‌క్రీమ్ జోడించండి', hi: '🍨 गुलाब जामुन और आइसक्रीम जोड़ें' },
   '✅ Done Editing Desserts': { te: '✅ డెజర్ట్స్ పూర్తయింది', hi: '✅ डेसर्ट पूरा हुआ' },
+  // Menu-first flow, dish changes and the rest of the labels the chat can emit (2026-10-26).
+  '🏛️ Indoor Banquet Hall': { te: '🏛️ ఇండోర్ బ్యాంక్వెట్ హాల్', hi: '🏛️ इंडोर बैंक्वेट हॉल' },
+  '👍 Happy with this menu': { te: '👍 ఈ మెనూ నచ్చింది', hi: '👍 यह मेनू पसंद आया' },
+  '✏️ Change some dishes': { te: '✏️ కొన్ని వంటకాలు మార్చండి', hi: '✏️ कुछ व्यंजन बदलें' },
+  '🔄 Other packages': { te: '🔄 ఇతర ప్యాకేజీలు', hi: '🔄 अन्य पैकेज' },
+  '🔁 Change another dish': { te: '🔁 మరో వంటకం మార్చండి', hi: '🔁 एक और व्यंजन बदलें' },
+  '✅ Confirm this estimation': { te: '✅ ఈ అంచనాను నిర్ధారించండి', hi: '✅ इस अनुमान की पुष्टि करें' },
+  '💡 Suggest a Spread for Me': { te: '💡 నాకు ఒక మెనూ సూచించండి', hi: '💡 मेरे लिए मेनू सुझाएँ' },
+  '🍛 Custom Dishes & Live Counters': { te: '🍛 కస్టమ్ వంటకాలు & లైవ్ కౌంటర్లు', hi: '🍛 कस्टम व्यंजन और लाइव काउंटर' },
+  '💡 Suggest More Dishes': { te: '💡 మరిన్ని వంటకాలు సూచించండి', hi: '💡 और व्यंजन सुझाएँ' },
+  '🍛 Change the Dishes': { te: '🍛 వంటకాలు మార్చండి', hi: '🍛 व्यंजन बदलें' },
+  '📅 Pick from Calendar': { te: '📅 క్యాలెండర్ నుండి ఎంచుకోండి', hi: '📅 कैलेंडर से चुनें' },
+  '🆕 Plan Another Event': { te: '🆕 మరో ఈవెంట్ ప్లాన్ చేయండి', hi: '🆕 एक और इवेंट प्लान करें' },
+  '📞 Call Catering Manager': { te: '📞 కేటరింగ్ మేనేజర్‌కు కాల్ చేయండి', hi: '📞 केटरिंग मैनेजर को कॉल करें' },
+  '🚚 Switch to Outdoor Catering': { te: '🚚 అవుట్‌డోర్ కేటరింగ్‌కు మారండి', hi: '🚚 आउटडोर केटरिंग पर जाएँ' },
 }
+
+// Labels that carry a date or a number, so they can't be listed one by one.
+const PATTERN_TR: Array<{ re: RegExp; te: (m: RegExpMatchArray) => string; hi: (m: RegExpMatchArray) => string }> = [
+  { re: /^⚡ Tomorrow \((.+)\)$/, te: m => `⚡ రేపు (${m[1]})`, hi: m => `⚡ कल (${m[1]})` },
+  { re: /^🎉 This Sat \((.+)\)$/, te: m => `🎉 ఈ శనివారం (${m[1]})`, hi: m => `🎉 इस शनिवार (${m[1]})` },
+  { re: /^🌟 This Sun \((.+)\)$/, te: m => `🌟 ఈ ఆదివారం (${m[1]})`, hi: m => `🌟 इस रविवार (${m[1]})` },
+  { re: /^📅 Next Sat \((.+)\)$/, te: m => `📅 వచ్చే శనివారం (${m[1]})`, hi: m => `📅 अगले शनिवार (${m[1]})` },
+  { re: /^✅ Proceed with (\d+) guests$/, te: m => `✅ ${m[1]} మంది అతిథులతో కొనసాగండి`, hi: m => `✅ ${m[1]} मेहमानों के साथ आगे बढ़ें` },
+  { re: /^👥 Keep all (\d+) guests$/, te: m => `👥 మొత్తం ${m[1]} మంది అతిథులను ఉంచండి`, hi: m => `👥 सभी ${m[1]} मेहमान रखें` },
+]
 
 export function translateSuggestionLabel(label: string, lang: string): string {
   if (lang !== 'te' && lang !== 'hi') return label
   const tr = SUGGESTION_LABEL_TR[label]
-  return tr ? (lang === 'te' ? tr.te : tr.hi) : label
+  if (tr) return lang === 'te' ? tr.te : tr.hi
+  for (const p of PATTERN_TR) {
+    const m = label.match(p.re)
+    if (m) return lang === 'te' ? p.te(m) : p.hi(m)
+  }
+  return label
 }

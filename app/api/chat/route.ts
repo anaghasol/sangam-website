@@ -1,14 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { getSangamUnifiedKnowledgeContext } from '@/lib/sangam-knowledge'
 import { askFreeModels } from '@/lib/free-ai'
 import { lookupCustomerByPhone, extractPhoneNumber } from '@/lib/customer-lookup'
 import { calculateEffectiveGuests, generatePopularCateringQuote, extractCustomDishes, extractDishesFromText, pickHallForGuestCount, matchSectionByText, findDishesInSectionFromText, extractExplicitEventDate } from '@/lib/catering-portions'
 import { getSangamCateringLiveData, getBranchIdByName, getOccasionIdByName, getIndoorMenuStructured, getHallsBookedOnDate } from '@/lib/sangam-catering'
 import { getIndoorBookingIntelligence, getOutdoorBookingIntelligence } from '@/lib/sangam-booking-intelligence'
+import { generateChatBookingCode, latestStatedEventDate } from '@/lib/booking-code'
+import { findLargestAvailableHall, latestStatedGuestCount, hasAcceptedOverCapacity, buildCapacityQuestion, KEEP_ALL_GUESTS_PHRASE } from '@/lib/hall-capacity'
+import { resolveIndoorDishChanges, buildDishChangeAck, NO_DISH_CHANGES, STANDARD_ADDON_RATE } from '@/lib/indoor-dish-changes'
+import { ESTIMATE_SHOWN_RE, hasMenuFirstIntent, menuReviewState, menuFirstStep, MENU_HAPPY_MARKER, type MenuFirstStep } from '@/lib/menu-first'
+import { getOutdoorSuggestion, quoteOutdoorSuggestion, suggestionDishNames, describeSuggestionSource } from '@/lib/outdoor-menu'
+import { latestMentionedBranch, latestDietary, latestMenuSelection, resolveOutdoorDishes, snapshotBooking, diffBooking, buildChangeAck, type BookingChange } from '@/lib/booking-changes'
 import { createClient } from '@supabase/supabase-js'
 
 const SYSTEM_PROMPT = `You are Arjun, the friendly Hospitality and Catering Manager at Sangam Hotels Hyderabad (By Sameeksha Hospitality).
 You respond like a warm, knowledgeable catering professional — not a robot. Be concise, hospitable, and speak with pride about the brand.
+
+HOW TO TALK (CONVERSATION STYLE — like a real person on the phone with a guest):
+- Sound like a friendly human host, not a form. React to what the guest just said first ("Lovely — a housewarming!", "Got it, 300 guests then"), then move the conversation forward.
+- Ask ONE thing at a time, in plain words. Never fire a list of questions at once.
+- Keep replies short. Only show the full itemized estimate when there is something new in it (first estimate, or after a change). For anything else, answer in 1–3 sentences.
+- Never repeat a question the guest already answered, and never repeat the same sentence you used in your previous reply.
+- Use the guest's name naturally once you know it (not in every line).
+- If the guest is unsure, give a gentle recommendation instead of more options ("For 150 guests most families go with the Grand Veg menu — shall I show you that?").
+- If you can't do something or don't know a figure, say so honestly and offer the catering manager (+91 90638 44021) — never make anything up.
+- Match the guest's tone: relaxed with a relaxed guest, precise with a guest who is in a hurry.
+
+CHANGES AFTER AN ESTIMATE OR A SAVED BOOKING:
+- Guests often change their mind after seeing (or even confirming) a quote: a different menu/package, more or fewer guests, adding/removing/swapping dishes, a new date or branch. This is normal — welcome it ("Of course, happy to change that!").
+- Apply ONLY what they changed and keep everything else exactly as it was (same branch, date, slot, package, dishes, name, phone).
+- Start with one sentence confirming the change in plain words ("Done — I've moved you from 200 to 300 guests"), then show the revised estimate with the new numbers.
+- If they ask to "try another menu" without naming one, show the available packages for their diet and ask which one they'd like — don't pick for them.
+- If the booking was already saved, the saved quote is updated automatically under the same booking code (unless the date/branch changed, which gives a new code) — tell them so in one line. Don't ask them to confirm again unless they want to.
 
 ABOUT SANGAM HOTELS HYDERABAD:
 - Flagship Outlet & Banquets: Peerzadiguda (Parvathapur Rd, 24 Hours)
@@ -32,10 +55,11 @@ When a customer inquires about Outdoor Catering, Trays, Delivery, or Custom Menu
    - Step 2: Event Date & Time (Event Date and Lunch / Dinner / Morning service time)
    - Step 3: Guest Count (Pax: 30, 50, 100, 150, 200+ guests)
    - Step 4: Menu Items / Spread — when the guest asks you to suggest/decide (rather than naming dishes themselves), choose what to offer in this exact priority order, and never skip a tier:
-     1. LIVE OUTDOOR PACKAGE FIRST: if "OUTDOOR CATERING PACKAGES & LIVE COUNTERS" below lists a real package matching the guest's dietary preference, offer THAT package's own price and description — always the first choice when one exists and fits.
-     2. PAST SIMILAR ORDERS NEXT: if no matching live package exists, check "MOST FREQUENTLY CHOSEN DISHES" and "PAST OUTDOOR BOOKINGS" below — if real past orders for this occasion are on file, build the suggested spread from those actual most-chosen dishes (not a guess), and say so naturally (e.g. "for a birthday this size, most of our outdoor guests go with..."). There is currently NO fixed outdoor "package" in the system (no "Popular Veg Spread"/"Hyderabadi Non-Veg Spread" or similar actually exists) — never name or price one as if it were a real package; build the spread dish-by-dish from this tier or the next.
-     3. BUILD FROM THE DISH CATALOG LAST: only if neither tier above gives a real match, build a custom spread yourself from "GENERAL DISH CATALOG BY CATEGORY" below — pick dishes that suit the stated OCCASION (lively, shareable starters + a crowd-pleasing biryani for a Birthday Party; lighter, more formal choices for a Corporate Event; a grander multi-course spread for a Wedding/Reception) and the dietary preference. Every dish named this way MUST come from that catalog — never invent one.
-     Whichever tier you used, price the plate using only real numbers from that tier's data — never an unsourced figure. If the guest names specific dishes themselves, that always overrides all three tiers — see CUSTOM DISHES INTAKE RULE below.
+     0. DIET FIRST: before suggesting anything, the guest must have said Pure Veg or Non-Veg (Veg & Non-Veg counts as Non-Veg). If they asked you to suggest a menu without saying which, ask ONLY that: "What is your dietary preference?" with the three options (Pure Veg / Veg & Non-Veg / Non-Veg) — never suggest a menu before they answer.
+     1. OUTDOOR MENUS ARE NEVER INDOOR PACKAGES: never offer, name, describe or price an indoor banquet package (Standard/Grand/Platinum Veg or Non-Veg Menu) or an indoor package's dishes for an outdoor event.
+     2. When the "OUTDOOR SUGGESTED SPREAD" block appears below, that IS the suggestion: present exactly those dishes, section by section, and nothing else. It was already assembled server-side in this order — outdoor menus written in the knowledge base, then dishes most chosen on past outdoor bookings (for this event/occasion where on file), then best-selling items, then our classic South Indian (Andhra/Hyderabadi) spread. Say where it comes from in one natural phrase (the block tells you). Never add dishes of your own to it. There is currently NO fixed outdoor "package" in the system (no "Popular Veg Spread"/"Hyderabadi Non-Veg Spread" or similar actually exists) — never name or price one as if it were a real package.
+     3. If a real live outdoor package is listed under "OUTDOOR CATERING PACKAGES & LIVE COUNTERS" and matches the guest's diet, you may mention it as an alternative — but the suggested spread above stays the main answer.
+     Price the plate using only the numbers in that block — never an unsourced figure. If the guest names specific dishes themselves, that always overrides all of this — see CUSTOM DISHES INTAKE RULE below.
    - Step 5: Delivery Address (full address/venue where the food must be delivered/set up), Customer Name, and Phone/WhatsApp Number — these are MANDATORY before the booking can be confirmed/saved (see MANDATORY CUSTOMER DETAILS section below), but do NOT block the estimation itself — show the estimation first, then ask for these to lock in the booking.
 3. Estimation Rule: The MAIN things needed for estimation are **Pax** and **Items/Menu**.
    - As soon as Pax and Items are provided (or if the customer already included them in their text), IMMEDIATELY generate and display the full Outdoor Catering Estimation!
@@ -160,6 +184,29 @@ const ERROR_FALLBACK_L: Record<'en' | 'te' | 'hi', { reply: string; suggestions:
   },
 }
 
+// The outdoor estimate's price line. With no live price on file for the
+// chosen dishes the quote total is 0 — say the rate will be shared by the
+// catering manager rather than showing the guest "₹0/plate = ₹0" (2026-10-24).
+function outdoorEstimateLine(pricePerPlate: number, pax: number, total: number, discountLine: string): string {
+  return pricePerPlate > 0 && total > 0
+    ? `💰 **Estimation**: ₹${pricePerPlate}/plate × ${pax} Guests = **₹${total.toLocaleString('en-IN')}**${discountLine}\n\n`
+    : `💰 **Estimation**: per-plate pricing for these dishes for ${pax} guests will be shared by our catering manager shortly.\n\n`
+}
+
+// Runs `task` after the response has been sent (Next's after()), so the
+// customer never waits on it -- but, unlike a bare `void promise`, the host
+// keeps the function alive until it finishes (2026-10-23: on serverless
+// hosts a fire-and-forget write can be cut off once the response returns,
+// silently dropping transcript rows). Outside a request scope (scripts,
+// tests) after() throws, so fall back to running it directly.
+function runAfterResponse(task: () => Promise<unknown>) {
+  try {
+    after(task)
+  } catch {
+    void task()
+  }
+}
+
 // Fire-and-forget write of the full transcript into sangam.chat_sessions,
 // upserted on session_id -- keyed on the frontend's per-tab session id, not
 // on quote_number, so a browsing conversation that never reaches a quote
@@ -207,24 +254,80 @@ async function logChatSession(
  */
 export function extractAddress(text: string): string | null {
   if (!text) return null
-  const phraseMatch = text.match(/(?:delivery address(?:\s*is)?|address is|deliver(?:y)?\s*(?:to|at)|venue(?:\s*address)?\s*is|location is)\s*[:\-]?\s*([^\n]{8,150})/i)
-  if (phraseMatch) return phraseMatch[1].trim().replace(/[.\s]+$/, '')
+  // Cut the address off where the guest moves on to other details in the
+  // same message ("..., phone 98xxxxxxxx", "... and my name is ...") —
+  // (2026-10-23) these used to be saved as part of the address.
+  const trimTrailingDetails = (s: string) => s
+    .replace(/[,;]?\s*(?:and\s+)?(?:my\s+)?(?:phone|mobile|contact|whatsapp|cell|name)\b.*$/i, '')
+    .replace(/[,;]?\s*(?:\+91[\s-]?)?[6-9]\d{9}\b.*$/, '')
+    .trim()
+    .replace(/[.,;\s]+$/, '')
+  const phraseMatch = text.match(/(?:delivery address(?:\s*is)?|address is|deliver(?:y|ed)?\s*(?:to|at)|venue(?:\s*address)?\s*is|location is)\s*[:\-]?\s*([^\n]{8,150})/i)
+  if (phraseMatch) {
+    const addr = trimTrailingDetails(phraseMatch[1])
+    if (addr.length >= 8) return addr
+  }
   const pinLineMatch = text.match(/^[^\n]*\b\d{6}\b[^\n]*$/m)
-  if (pinLineMatch) return pinLineMatch[0].trim()
+  if (pinLineMatch) return trimTrailingDetails(pinLineMatch[0]) || null
   return null
 }
+
+/**
+ * Did the customer explicitly confirm / ask to save the booking? One shared
+ * rule (2026-10-23) for every place that used to carry its own copy of this
+ * regex. Adds "save the quote" / "save my booking" / "book this" — a real
+ * outdoor guest typed "save the quote and this was my details", which none
+ * of the old copies recognized, so the quote was never saved even though
+ * the AI told them it was. The hall-capacity chips ("please proceed with
+ * <hall> for N guests", "...catering manager confirm the seating
+ * arrangement") are about seating, not the booking, so they're stripped
+ * first rather than counted as a confirmation.
+ */
+export function isBookingConfirmation(text: string): boolean {
+  if (!text) return false
+  const cleaned = text
+    .replace(new RegExp(KEEP_ALL_GUESTS_PHRASE, 'gi'), ' ')
+    .replace(/\bproceed with [^.\n]{1,80}? for \d+ guests\b/gi, ' ')
+  return /\b(?:yes,?\s*)?(?:please\s+)?confirm(?:ed)?\b|\bgo ahead\b|\bproceed\b|\bbook (?:it|this|the (?:event|booking|order))\b|\block (?:it|this) in\b|\btentatively booked\b|\bsave (?:the |my |this |our )?(?:quote|quotation|booking|order|estimate|estimation)\b/i.test(cleaned)
+}
+
+// Words that end a name ("My name is Ravi Kumar delivery address is...")
+// or show that "I am ..." / "this is ..." wasn't a name at all ("I am
+// looking for a hall", "this is for 100 guests").
+const NAME_STOPWORDS = new Set(['looking', 'planning', 'interested', 'from', 'for', 'here', 'calling', 'speaking', 'delivery', 'address', 'phone', 'mobile', 'number', 'whatsapp', 'contact', 'and', 'my', 'the', 'a', 'an', 'to', 'at', 'in', 'with', 'on', 'is', 'we', 'our', 'booking', 'need', 'want', 'having', 'getting', 'not', 'also', 'just', 'very', 'so', 'confirm', 'please', 'event', 'venue', 'going', 'trying', 'checking', 'asking', 'ok', 'okay', 'fine', 'sure', 'ready', 'happy', 'good'])
 
 /**
  * Extracts a customer's stated name from free text (e.g. "my name is Ravi",
  * "this is Ravi speaking", "I am Ravi"). Only used as a fallback when the
  * phone-lookup didn't already resolve a name for a returning customer.
  * Never invents a name.
+ *
+ * Bug fix (2026-10-23): the old single regex ran case-insensitively, so
+ * "I am looking for a banquet hall" gave the name "looking for", and the
+ * whole conversation was joined into one string, so "My name is Ravi Kumar"
+ * + "Delivery address is ..." became "Ravi Kumar Delivery". Now: after an
+ * explicit "my name is" / "name:" any capitalization is accepted, but after
+ * the looser "I am" / "I'm" / "this is" every name word must be Capitalized;
+ * and capture stops at punctuation or a non-name word.
  */
 export function extractCustomerName(text: string): string | null {
   if (!text) return null
-  const m = text.match(/(?:my name is|this is|i am|i'm|\bname\s*(?:is|:|-)?\s*)\s*([A-Z][a-zA-Z]{1,30}(?:\s+[A-Z][a-zA-Z]{1,30}){0,2})\b/i)
-  if (!m) return null
-  return m[1].replace(/\s+(?:speaking|here|calling)$/i, '').trim()
+  const tryAfter = (re: RegExp, requireCapitals: boolean): string | null => {
+    const m = text.match(re)
+    if (!m) return null
+    const words: string[] = []
+    for (const raw of text.slice((m.index ?? 0) + m[0].length).split(/\s+/).filter(Boolean)) {
+      const word = raw.replace(/[^A-Za-z]/g, '')
+      if (!word || word.length > 30 || NAME_STOPWORDS.has(word.toLowerCase())) break
+      if (requireCapitals && !/^[A-Z]/.test(word)) break
+      words.push(word)
+      if (words.length === 3 || /[,.;:!?]$/.test(raw)) break
+    }
+    if (words.length === 0 || (words.length === 1 && words[0].length < 2)) return null
+    return words.map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
+  }
+  return tryAfter(/\b(?:my name is|my name's|name\s*(?:is|:|-))\s*/i, false)
+    || tryAfter(/\b(?:i am|i'm|this is)\s+/i, true)
 }
 
 export async function POST(req: NextRequest) {
@@ -296,7 +399,7 @@ export async function POST(req: NextRequest) {
     responseLang = explicitLang || autoDetectedLang || (responseLanguage && LANG_NAMES[responseLanguage] ? responseLanguage : null) || 'en'
     const langName = LANG_NAMES[responseLang] || 'English'
     const languageContext = responseLang !== 'en'
-      ? `\nLANGUAGE INSTRUCTION (CRITICAL — FOLLOW EXACTLY):\nRespond in **${langName}** for this reply.\n- Greetings, questions, descriptions, instructions, section headers → ${langName} (e.g. "ధరల వివరాలు:" not "Pricing Details:" in Telugu; "मूल्य विवरण:" not "Pricing Details:" in Hindi).\n- Dish names → keep in English (Chicken Biryani, Paneer Tikka, Bagara Baingan).\n- Prices, dates, quantities, phone numbers, person names, order/quote codes → keep in English (₹800, 55 Guests, SGM-1234).\n- Do NOT mix in a different Indian language than ${langName} — if ${langName} is Telugu, do not answer in Hindi, and vice versa.\n- The customer may type in any language or script — understand them regardless, but ALWAYS reply in ${langName} unless their LATEST message explicitly asks for a different language, in which case switch immediately and obey that instead.\n`
+      ? `\nLANGUAGE INSTRUCTION (CRITICAL — FOLLOW EXACTLY):\nRespond in **${langName}** for this reply.\n- Greetings, questions, descriptions, instructions, section headers → ${langName} (e.g. "ధరల వివరాలు:" not "Pricing Details:" in Telugu; "मूल्य विवरण:" not "Pricing Details:" in Hindi).\n- Dish names → keep in English (Chicken Biryani, Paneer Tikka, Bagara Baingan).\n- Prices, dates, quantities, phone numbers, person names, order/quote/booking codes → keep in English (₹800, 55 Guests, PA05113210).\n- Do NOT mix in a different Indian language than ${langName} — if ${langName} is Telugu, do not answer in Hindi, and vice versa.\n- The customer may type in any language or script — understand them regardless, but ALWAYS reply in ${langName} unless their LATEST message explicitly asks for a different language, in which case switch immediately and obey that instead.\n`
       : `\nLANGUAGE: Respond in English. The customer may type in any language — understand them, but reply in English unless they explicitly ask for a different language (Telugu or Hindi), in which case switch to that language immediately.\n`
 
 
@@ -321,18 +424,19 @@ export async function POST(req: NextRequest) {
     const numMatch = stripDateNumbers(lastUserMsg).match(/\b(?:pax\s*)?(\d{2,4})\b/i) || stripDateNumbers(allUserText).match(/\b(?:pax\s*)?(\d{2,4})\b/i)
     const rawCount = numMatch ? parseInt(numMatch[1], 10) : 0
     const kidsMatch = allUserText.match(/(\d+)\s*(?:kids|children)/i)
-    const adultsMatch = allUserText.match(/(\d+)\s*(?:adults|people|guests|persons|pax)/i)
     const kidsCount = kidsMatch ? parseInt(kidsMatch[1], 10) : 0
-    const adultsCount = adultsMatch ? parseInt(adultsMatch[1], 10) : (rawCount || 20)
+    // Most recently stated count wins (2026-10-23) -- this used to be the
+    // FIRST "N guests" anywhere in the conversation, so "recalculate for 150
+    // guests" or reducing the count to fit a hall's capacity was ignored.
+    const adultsCount = latestStatedGuestCount(allMsgs) ?? (rawCount || 20)
     const { effectiveAdults } = calculateEffectiveGuests(adultsCount, kidsCount)
 
-    // Detect branch mention across conversation
-    let mentionedBranch = ''
-    if (lowerAllText.includes('peerzadiguda')) mentionedBranch = 'Peerzadiguda'
-    else if (lowerAllText.includes('hayathnagar')) mentionedBranch = 'Hayathnagar'
-    else if (lowerAllText.includes('malkapur')) mentionedBranch = 'Malkapur'
-    else if (lowerAllText.includes('mansoorabad')) mentionedBranch = 'Mansoorabad'
-    else if (lowerAllText.includes('koyyalagudem')) mentionedBranch = 'Koyyalagudem'
+    // Detect the branch the guest selected. Strict branch scoping
+    // (2026-10-23): the branch the guest named MOST RECENTLY wins — this
+    // used to check a fixed order across the whole conversation, so a guest
+    // who switched from Peerzadiguda to Hayathnagar stayed on Peerzadiguda
+    // (and its halls) no matter what they said afterwards.
+    const mentionedBranch = latestMentionedBranch(allMsgs) || ''
 
     // Detect service type & intake progress
     const isIndoor = lowerAllText.includes('indoor') || lowerAllText.includes('banquet') || lowerAllText.includes('hall')
@@ -357,7 +461,7 @@ export async function POST(req: NextRequest) {
     // showing Date as "Pending", and Arjun re-asked a date the guest had
     // already given. Added the month-then-day form (mirrors the pattern
     // stripDateNumbers() already uses below) so both orders are recognized.
-    const hasDateDetected = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(lowerAllText)
+    const hasDateDetected = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(lowerAllText) || extractExplicitEventDate(allUserText) !== null
     const hasSlotDetected = lowerAllText.includes('lunch') || lowerAllText.includes('dinner') || lowerAllText.includes('full day') || (lowerAllText.includes('slot') && (lowerAllText.includes('slot 1') || lowerAllText.includes('slot 2') || lowerAllText.includes('slot 3') || lowerAllText.includes('slot1') || lowerAllText.includes('slot2') || lowerAllText.includes('lunch slot') || lowerAllText.includes('dinner slot')))
     const hasPaxDetected = /\b(\d+)\s*(?:guests?|pax|people|persons|adults)\b/i.test(lowerAllText) || /\bpax\s*\d+\b/i.test(lowerAllText) || rawCount > 0
     const hasPackageDetected = lowerAllText.includes('veg menu') || lowerAllText.includes('non-veg menu') || lowerAllText.includes('grand veg') || lowerAllText.includes('grand non-veg') || lowerAllText.includes('platinum') || lowerAllText.includes('600') || lowerAllText.includes('700') || lowerAllText.includes('800') || lowerAllText.includes('900') || lowerAllText.includes('1000') || lowerAllText.includes('1,000')
@@ -416,7 +520,17 @@ export async function POST(req: NextRequest) {
     // choice, so the fallback renders a real quote (grounded in the live
     // outdoor menu / dietary preference already known) instead of looping.
     const wantsOutdoorSuggestion = /\b(suggest|recommend(?:ed|ation)?|your (?:choice|pick)|you (?:choose|decide|pick|suggest)|what(?:'s| is) (?:best|good|famous|popular)|best (?:for|option)|most famous|famous (?:for|in|dish)|popular (?:choice|dish|item))\b/i.test(lowerAllText)
-    const hasOutdoorItemsDetected = lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('499') || lowerAllText.includes('649') || lowerAllText.includes('popular veg') || lowerAllText.includes('hyderabadi non-veg') || hasCustomDishes || lowerAllText.includes('custom dishes') || lowerAllText.includes('tray sizing') || wantsOutdoorSuggestion
+    // Menu-first order (lib/menu-first.ts, 2026-10-26): "suggest / book me
+    // something" gets service → branch → diet → a menu → "happy with it?"
+    // BEFORE any event details are collected. Skipped once an estimate has
+    // already been shown (the guest is then just changing their booking).
+    // Looks for an actual priced estimate (its headline / total / booking code),
+    // NOT the word "estimate": our own questions say "…the package you'd like
+    // an estimation for", which used to switch menu-first off right there.
+    const estimateAlreadyShown = allMsgs.some(m => m.role === 'assistant' && ESTIMATE_SHOWN_RE.test(m.content))
+    const menuFirstFlow = hasMenuFirstIntent(allMsgs) && !hasCustomDishes && !estimateAlreadyShown
+    const menuReview = menuReviewState(allMsgs)
+    const hasOutdoorItemsDetected = (menuFirstFlow && menuReview.shown) || lowerAllText.includes('veg spread') || lowerAllText.includes('non-veg spread') || lowerAllText.includes('499') || lowerAllText.includes('649') || lowerAllText.includes('popular veg') || lowerAllText.includes('hyderabadi non-veg') || hasCustomDishes || lowerAllText.includes('custom dishes') || lowerAllText.includes('tray sizing') || wantsOutdoorSuggestion
 
     const lastUserLower = lastUserMsg.toLowerCase()
     const isOutdoorExplicit = lastUserLower.includes('outdoor') || lastUserLower.includes('tray') || lastUserLower.includes('outside') || lastUserLower.includes('catering at home') || lastUserLower.includes('delivery') || lastUserLower.includes('farmhouse') || lastUserLower.includes('spread')
@@ -481,8 +595,12 @@ export async function POST(req: NextRequest) {
     }
     // New (non-returning) customer — the phone lookup won't have a name on
     // file, so fall back to whatever the customer actually typed themselves.
+    // Checked message by message (newest first) rather than on the joined
+    // text, so words from the next message can't run into the name.
     if (!customerName) {
-      customerName = extractCustomerName(allUserText)
+      for (let i = allMsgs.length - 1; i >= 0 && !customerName; i--) {
+        if (allMsgs[i].role === 'user') customerName = extractCustomerName(allMsgs[i].content)
+      }
     }
 
     // Resolved ahead of the Promise.all below (rather than inside it) so
@@ -503,13 +621,23 @@ export async function POST(req: NextRequest) {
     // the structured live catering data (real halls/menus/dishes), the real
     // eventmgmt.occasion id, and (bug fix, event-booking PWA team) which halls
     // are already booked on the detected date — all in parallel.
+    // Outdoor "suggest me a menu" (2026-10-25): needs the guest's diet first
+    // (asked below if missing), then is built dish-by-dish from outdoor
+    // sources only — never from the indoor banquet packages. The occasion is
+    // resolved to its id inside the same Promise.all, so the suggestion waits
+    // for it afterwards.
+    const outdoorSuggestionWanted = isOutdoorFlow && (wantsOutdoorSuggestion || menuFirstFlow) && !hasCustomDishes
+    const outdoorDietMissing = outdoorSuggestionWanted && !lastDietaryDetected
     const [extraContext, liveCateringData, resolvedOccasionId, indoorMenuBreakdown, bookedHallIdsOnDate] = await Promise.all([
-      getSangamUnifiedKnowledgeContext(lastUserMsg, resolvedBranchId),
+      getSangamUnifiedKnowledgeContext(lastUserMsg, resolvedBranchId, isOutdoorFlow ? 'outdoor' : undefined),
       getSangamCateringLiveData(),
       detectedOccasionText ? getOccasionIdByName(detectedOccasionText) : Promise.resolve(null),
       getIndoorMenuStructured(),
       earlyDetectedEventDate ? getHallsBookedOnDate(earlyDetectedEventDate) : Promise.resolve(new Set<string>()),
     ])
+    const outdoorSuggestion = outdoorSuggestionWanted && lastDietaryDetected
+      ? await getOutdoorSuggestion({ diet: lastDietaryDetected, occasion: detectedOccasionText, occasionId: resolvedOccasionId })
+      : null
 
     // Booking-history grounding (real past events) — only worth the query
     // once we actually have a guest count to compare against.
@@ -542,6 +670,21 @@ export async function POST(req: NextRequest) {
           : `\nNo active hall is on file in the database for ${mentionedBranch} branch specifically yet — do not name a specific hall for this branch; tell the guest availability will be confirmed by our catering manager at +91 90638 44021.`)
       : ''
 
+    // Hall-capacity check (2026-10-23): once branch + pax are known for an
+    // indoor booking, compare the guest count to the real max_pax of the
+    // largest hall at that branch that's still free on the event date. If
+    // the guest count is more than it can hold, Arjun asks the guest whether
+    // to proceed with that hall (~its capacity) before going any further —
+    // unless they've already chosen to keep their full count.
+    const largestAvailableHall = (isIndoor && !isOutdoorFlow && hasBranchDetected)
+      ? findLargestAvailableHall(liveCateringData.halls, resolvedBranchId, bookedHallIdsOnDate)
+      : null
+    const paxExceedsHallCapacity = !!(largestAvailableHall && hasPaxDetected && effectiveAdults > largestAvailableHall.capacity)
+    const overCapacityAccepted = hasAcceptedOverCapacity(allUserText)
+    const hallCapacityContext = paxExceedsHallCapacity && overCapacityAccepted
+      ? `\nHALL CAPACITY NOTE: The guest count (${effectiveAdults}) is more than the largest available hall at ${mentionedBranch} — ${largestAvailableHall!.hall.name}, max ${largestAvailableHall!.capacity} guests. The customer has chosen to keep all ${effectiveAdults} guests: quote for ${effectiveAdults} guests, recommend ${largestAvailableHall!.hall.name}, and say our catering manager will get in touch to finalize the seating arrangement. Never claim the hall seats ${effectiveAdults}.\n`
+      : ''
+
     // Bug fix (2026-10-07): when a guest names their own custom dishes
     // (e.g. a full Andhra-style spread), the AI used to be handed only a
     // prose instruction ("price it off the closest live spread, adjusted
@@ -556,10 +699,71 @@ export async function POST(req: NextRequest) {
     // never actually called for this path. Compute it here and hand the AI
     // the exact numbers to use verbatim, the same way REAL DATABASE
     // CATERING & EVENT PRICING grounds the package-price path above.
-    const customMenuQuote = (isOutdoorFlow && hasCustomDishes && effectiveAdults > 0)
-      ? generatePopularCateringQuote('outdoor', mentionedBranch, effectiveAdults, effectiveVegOnly, [], allUserText, liveCateringData)
+    // Current state of the things a guest can change after an estimate
+    // (lib/booking-changes.ts, 2026-10-24): the outdoor dish list after
+    // every "add / remove / replace" so far, and the indoor package from the
+    // guest's LATEST pick. Both used to be read from the whole conversation
+    // at once — a removed dish stayed priced and saved, and switching from
+    // Platinum back to Grand Veg was ignored (fixed price priority).
+    const outdoorDishes = resolveOutdoorDishes(allMsgs, liveCateringData)
+    // A suggested outdoor spread only applies while the guest hasn't named
+    // their own dishes; once they have, their list wins (custom-dish path).
+    const activeOutdoorSuggestion = outdoorSuggestion && outdoorDishes.length < 2 ? outdoorSuggestion : null
+    const outdoorQuoteText = outdoorDishes.length > 0
+      ? outdoorDishes.join(', ')
+      : activeOutdoorSuggestion ? suggestionDishNames(activeOutdoorSuggestion).join(', ') : lastUserMsg + ' ' + allUserText
+    const menuSelection = latestMenuSelection(allMsgs, liveCateringData.indoorMenus)
+    const indoorQuoteText = menuSelection?.text ?? (lastUserMsg + ' ' + allUserText)
+    // Diet switched AFTER a package was picked ("actually make it non-veg"):
+    // the old package no longer applies, so offer that diet's packages.
+    const dietInfo = latestDietary(allMsgs)
+    const dietChangedAfterMenu = !!(menuSelection && dietInfo && dietInfo.index > menuSelection.index)
+
+    // Where the menu-first conversation is (null when this isn't one).
+    const menuFirstServiceKnown = isOutdoorFlow || /\b(?:indoor|banquet|hall)\b/.test(lowerAllText)
+    const menuFirstKind: MenuFirstStep | null = menuFirstFlow
+      ? menuFirstStep({ serviceKnown: menuFirstServiceKnown, hasBranch: hasBranchDetected, hasDiet: !!lastDietaryDetected, review: menuReview })
       : null
-    const customMenuGroundingContext = customMenuQuote
+    const menuFirstActive = menuFirstKind !== null && menuFirstKind !== 'done'
+    const indoorPackagePicked = !isOutdoorFlow && !!menuSelection && !dietChangedAfterMenu
+
+    // Dishes the guest removed from / added to the indoor package
+    // (lib/indoor-dish-changes.ts). Added dishes are priced from the dish
+    // database, or at the standard ₹${STANDARD_ADDON_RATE.veg} veg / ₹${STANDARD_ADDON_RATE.nonVeg} non-veg add-on rate.
+    const indoorHasPackage = !isOutdoorFlow && (!!menuSelection || hasPackageDetected)
+    const indoorDishCatalog = indoorHasPackage
+      ? generatePopularCateringQuote('inhouse', mentionedBranch, effectiveAdults, effectiveVegOnly, [], indoorQuoteText, liveCateringData, resolvedBranchId, indoorMenuBreakdown).sections.flatMap(s => s.dishes.map(d => d.name))
+      : []
+    const indoorDishChanges = indoorHasPackage
+      ? resolveIndoorDishChanges(allMsgs, { menuDishNames: indoorDishCatalog, live: liveCateringData })
+      : NO_DISH_CHANGES
+    const lastUserIdxForDishes = allMsgs.map(m => m.role).lastIndexOf('user')
+    const indoorDishAck = indoorHasPackage && lastUserIdxForDishes > 0
+      ? buildDishChangeAck(responseLang as 'en' | 'te' | 'hi', resolveIndoorDishChanges(allMsgs.slice(0, lastUserIdxForDishes), { menuDishNames: indoorDishCatalog, live: liveCateringData }), indoorDishChanges)
+      : ''
+    const menuReviewContext = menuFirstKind === 'review'
+      ? `\nMENU REVIEW STAGE: the guest has been shown a menu and has NOT yet said they are happy with it. Do NOT ask for the date, time, guest count, address, name or phone yet. If they ask for a change, apply it using only dishes from the menu data above (outdoor: only outdoor dishes; never an indoor package), show the updated menu, and end by asking whether they are happy with it.\n`
+      : ''
+
+    const suggestedOutdoorQuote = (activeOutdoorSuggestion && hasPaxDetected && effectiveAdults > 0)
+      ? quoteOutdoorSuggestion(activeOutdoorSuggestion, effectiveAdults, liveCateringData)
+      : null
+    const customMenuQuote = (isOutdoorFlow && outdoorDishes.length >= 2 && effectiveAdults > 0)
+      ? generatePopularCateringQuote('outdoor', mentionedBranch, effectiveAdults, effectiveVegOnly, [], outdoorQuoteText, liveCateringData)
+      : suggestedOutdoorQuote
+    // Dishes only (no prices) until the guest count is known.
+    const suggestedSpreadDishesContext = (activeOutdoorSuggestion && !suggestedOutdoorQuote)
+      ? `\nOUTDOOR SUGGESTED SPREAD (${activeOutdoorSuggestion.diet === 'veg' ? 'Pure Veg' : 'Non-Veg'}, ${describeSuggestionSource(activeOutdoorSuggestion)} — present exactly these dishes, section by section; no indoor package; guest count not known yet so give NO prices, ask for the guest count):\n` +
+        activeOutdoorSuggestion.sections.map(s => `${s.icon} ${s.label}: ${s.dishes.join(', ')}`).join('\n') + '\n'
+      : ''
+    const customMenuGroundingContext = suggestedOutdoorQuote
+      ? `\nOUTDOOR SUGGESTED SPREAD — LIVE GROUNDED QUOTE (${activeOutdoorSuggestion!.diet === 'veg' ? 'Pure Veg' : 'Non-Veg'} spread, ${describeSuggestionSource(activeOutdoorSuggestion!)}; already computed server-side from real dish pricing. Present exactly these dishes and figures verbatim — no indoor package, no extra dishes, do NOT recompute or state a different rate):\n` +
+        `${suggestedOutdoorQuote.headline}\n` +
+        `${suggestedOutdoorQuote.menuItems.join('\n')}\n` +
+        `${suggestedOutdoorQuote.trayBreakdown.join('\n')}\n` +
+        `• Rate: ₹${suggestedOutdoorQuote.pricePerPlate}/plate${suggestedOutdoorQuote.usedLiveData ? '' : ' — *no dish here is on our live price list yet; do not state a ₹/plate rate — say pricing will be confirmed by the catering manager*'}\n` +
+        `• Total Amount: ${effectiveAdults} guests × ₹${suggestedOutdoorQuote.pricePerPlate} = ₹${suggestedOutdoorQuote.finalTotal.toLocaleString('en-IN')}\n`
+      : customMenuQuote
       ? `\nCUSTOM MENU — LIVE GROUNDED QUOTE (already computed server-side from real dish pricing — use these EXACT figures and item list verbatim; do NOT recompute, average, guess, or state a different per-plate rate, label, or tray count):\n` +
         `${customMenuQuote.headline}\n` +
         `${customMenuQuote.menuItems.join('\n')}\n` +
@@ -579,8 +783,88 @@ export async function POST(req: NextRequest) {
     // the AI to echo it exactly, means what the guest sees and what gets
     // saved are the same real code, and it's never a frozen, repeated,
     // copy-pasted example.
-    const generatedQuoteCode = `SGM-${Math.floor(1000 + Math.random() * 9000)}`
-    const quoteCodeContext = `\nASSIGNED QUOTE REFERENCE CODE (use this EXACT code for this estimate — never invent or reuse a different one): ${generatedQuoteCode}\n`
+    // 2026-10-23: that code was still a fresh random `SGM-<1000-9999>` every
+    // turn. It is now the real booking code (lib/booking-code.ts) — built
+    // from branch + event date + phone, so it's the same on every turn and
+    // becomes eventmgmt.booking.booking_code on promotion. Until the date
+    // and phone (and branch, for indoor) are known there is no code yet, and
+    // the AI is told not to show a reference ID at all.
+    // Service type follows `isIndoor`, the same flag the quote save below
+    // uses for service_type, so the code prefix always matches the saved row.
+    const bookingServiceType: 'inhouse' | 'outdoor' = isIndoor ? 'inhouse' : 'outdoor'
+    const bookingEventDate = latestStatedEventDate(allMsgs.filter(m => m.role === 'user').map(m => m.content))
+    const generatedQuoteCode = generateChatBookingCode({
+      serviceType: bookingServiceType,
+      branchName: mentionedBranch || null,
+      eventDate: bookingEventDate,
+      phone: detectedPhone,
+    })
+    const quoteCodeContext = generatedQuoteCode
+      ? `\nASSIGNED BOOKING CODE / QUOTE REFERENCE (use this EXACT code as the Reference ID for this estimate — never invent or reuse a different one): ${generatedQuoteCode}\n`
+      : `\nBOOKING CODE: not generated yet — it needs the event date (day, month and year) and the customer's phone/WhatsApp number${bookingServiceType === 'inhouse' ? ' and branch' : ''}. Do NOT show any Reference ID or booking code in this reply, and never make one up; if you mention it, say the booking code will be generated once those details are shared.\n`
+
+    // Quote-save status, decided BEFORE the AI replies (2026-10-23). The AI
+    // used to decide for itself whether to say "your quote has been saved"
+    // — confirmed live: it told an outdoor guest "successfully saved in our
+    // system" with a full Booking Summary while the server had NOT saved
+    // anything (no explicit confirmation on file). This mirrors the exact
+    // gate the save step below uses, so the AI can only claim a save that
+    // actually happens, and otherwise asks for precisely what's missing.
+    const confirmationOnFile = isBookingConfirmation(allUserText)
+      || /advance\s*(?:payment|amount|of|paid)?\s*[:\-]?\s*₹?\s*[1-9][\d,]*/i.test(allUserText)
+    const missingForSave: string[] = []
+    if (bookingServiceType === 'inhouse' && !mentionedBranch) missingForSave.push('branch')
+    if (!bookingEventDate) missingForSave.push('event date with day, month and year')
+    if (!detectedPhone) missingForSave.push('phone/WhatsApp number')
+    if (bookingServiceType === 'outdoor' && !customerName) missingForSave.push('customer name')
+    if (bookingServiceType === 'outdoor' && !detectedAddress) missingForSave.push('full delivery address')
+    if (!confirmationOnFile) missingForSave.push('explicit confirmation (the customer saying "confirm" or "save the quote")')
+    const quoteSaveStatusContext = missingForSave.length === 0
+      ? `\nQUOTE SAVE STATUS: every required detail is on file and the customer has confirmed — this quote IS being saved now under booking code ${generatedQuoteCode}. You may tell the customer it has been saved and show the booking code.\n`
+      : `\nQUOTE SAVE STATUS: NOT saved — still missing: ${missingForSave.join('; ')}. Do NOT say the quote or booking is saved, confirmed, booked or placed, and do NOT show a "Booking Summary". Ask ONLY for the missing item(s) listed here.\n`
+    // A diet switched after the package was picked leaves no valid package
+    // until the guest picks one for the new diet — hold the save until then
+    // instead of re-saving the old package under the new diet.
+    const quoteWillSave = missingForSave.length === 0 && !(bookingServiceType === 'inhouse' && dietChangedAfterMenu)
+
+    // Changes after an estimate (2026-10-24): compare the booking as it
+    // stood before this message with how it stands now, so a guest who
+    // says "make it 300", "try the Grand Non Veg menu", "remove fish fry"
+    // or "move it to 12 Dec 2026" gets a human acknowledgement of exactly
+    // what changed — and, once the booking is saved, the saved quote is
+    // updated (same booking code) rather than left stale.
+    const lastUserIdx = allMsgs.map(m => m.role).lastIndexOf('user')
+    const prevMsgs = lastUserIdx > 0 ? allMsgs.slice(0, lastUserIdx) : []
+    const estimateShownBefore = prevMsgs.some(m => m.role === 'assistant' && /estimat|booking code|booking summary|reference id|అంచనా|अनुमान/i.test(m.content))
+    const bookingChanges: BookingChange[] = estimateShownBefore
+      ? diffBooking(snapshotBooking(prevMsgs, liveCateringData), snapshotBooking(allMsgs, liveCateringData))
+          // Indoor dish swaps are announced by their own "Swapped in ..." line.
+          .filter(c => c.kind !== 'dishes' || bookingServiceType === 'outdoor')
+      : []
+    let previousPhone: string | null = null
+    for (let i = prevMsgs.length - 1; i >= 0 && !previousPhone; i--) {
+      if (prevMsgs[i].role === 'user') previousPhone = extractPhoneNumber(prevMsgs[i].content)
+    }
+    const previousBookingCode = bookingChanges.length > 0
+      ? generateChatBookingCode({
+          serviceType: bookingServiceType,
+          branchName: latestMentionedBranch(prevMsgs),
+          eventDate: latestStatedEventDate(prevMsgs.filter(m => m.role === 'user').map(m => m.content)),
+          phone: previousPhone,
+        })
+      : null
+    const changedPackageName = bookingChanges.some(c => c.kind === 'menu') && bookingServiceType === 'inhouse'
+      ? generatePopularCateringQuote('inhouse', mentionedBranch, effectiveAdults, effectiveVegOnly, [], indoorQuoteText, liveCateringData, resolvedBranchId, indoorMenuBreakdown).packageName
+      : null
+    const changeAck = buildChangeAck(responseLang as 'en' | 'te' | 'hi', bookingChanges, {
+      packageName: changedPackageName,
+      savedCode: quoteWillSave ? generatedQuoteCode : null,
+      previousCode: previousBookingCode,
+      showRevised: !dietChangedAfterMenu,
+    })
+    const changeContext = bookingChanges.length > 0
+      ? `\nCHANGES THE CUSTOMER JUST MADE TO THEIR BOOKING: ${buildChangeAck('en', bookingChanges, { packageName: changedPackageName, savedCode: quoteWillSave ? generatedQuoteCode : null, previousCode: previousBookingCode, showRevised: false })?.replace(/\*\*/g, '').replace(/\n+/g, ' ').trim()}\nStart your reply with ONE warm, natural sentence acknowledging exactly these changes (like a person would: "Sure — I've updated your guest count from 200 to 300"), then show the revised estimate using the NEW figures only. Never re-ask for details that haven't changed.\n`
+      : ''
 
     const intakeStatusContext = isOutdoorFlow ? (
       `\nCURRENT INTAKE STATUS (OUTDOOR CATERING & LIVE FOOD SETUP):\n` +
@@ -589,10 +873,14 @@ export async function POST(req: NextRequest) {
       `• Event Date: ${hasDateDetected ? 'Already Provided' : 'Pending'}\n` +
       `• Event Time: ${hasTimeDetected ? 'Already Provided' : 'Pending'}\n` +
       `• Guest Count (Pax): ${hasPaxDetected ? `${effectiveAdults} Guests` : 'Pending'}\n` +
-      `• Menu / Items: ${hasOutdoorItemsDetected ? 'Selected' : 'Pending'}\n` +
+      `• Dietary Preference: ${lastDietaryDetected || 'Not stated'}\n` +
+      `• Menu / Items: ${outdoorDietMissing ? 'Pending — dietary preference needed first (overrides everything below)' : hasOutdoorItemsDetected ? 'Selected' : 'Pending'}\n` +
       `CRITICAL INSTRUCTION: If both Pax and Menu/Items are provided (or if user provided them upfront in text), IMMEDIATELY generate and display the full Outdoor Catering Quote with tray sizing (${liveOutdoorPriceLine}), total amount, included services, and the dish sections (no "[Edit]" tags, no "(Choose any N)" notes)! Otherwise, ask ONLY for the NEXT 'Pending' detail in this exact order: Occasion -> Date & Time -> Pax -> Menu/Items. Never ask for fields that are already provided!\n` +
-      `MENU/ITEMS SOURCE ORDER when the guest wants a suggestion (not naming dishes themselves): (1) a matching live package from OUTDOOR CATERING PACKAGES above, (2) else the MOST FREQUENTLY CHOSEN DISHES / PAST OUTDOOR BOOKINGS above for similar ${detectedOccasionText || 'occasion'} orders, (3) else build one yourself from GENERAL DISH CATALOG above, picked to suit the stated occasion and diet. Never mix these — use the first tier that actually has real data. There is NO real outdoor "package" on file today (no "Popular Veg Spread"/"Hyderabadi Non-Veg Spread" exists) — always name the actual dishes chosen, never a made-up package name.` +
-      customMenuGroundingContext + quoteCodeContext
+      (outdoorDietMissing
+        ? `DIET NOT KNOWN YET: the guest asked for a menu suggestion but has not said Pure Veg or Non-Veg. Ask ONLY for their dietary preference (Pure Veg / Veg & Non-Veg / Non-Veg) — do NOT suggest any dishes or menu yet.\n`
+        : `MENU/ITEMS when the guest wants a suggestion (not naming dishes themselves): use ONLY the OUTDOOR SUGGESTED SPREAD block below when it is present (already built from outdoor sources: knowledge base, past outdoor bookings, trending items, then our South Indian spread). NEVER use or mention an indoor banquet package (Standard/Grand/Platinum menus) or hall for an outdoor event. There is NO real outdoor "package" on file — always name the actual dishes, never a made-up package name.\n`) +
+      suggestedSpreadDishesContext +
+      customMenuGroundingContext + quoteCodeContext + quoteSaveStatusContext
     ) : (
       `\nCURRENT INTAKE STATUS (INDOOR AC BANQUET HALLS):\n` +
       `• Branch: ${mentionedBranch || 'Not specified yet'}\n` +
@@ -602,7 +890,7 @@ export async function POST(req: NextRequest) {
       `• Dietary Preference: ${lastDietaryDetected || 'Pending'}\n` +
       `• Menu Package: ${hasPackageDetected ? 'Selected' : 'Pending'}\n` +
       `CRITICAL INSTRUCTION: Review the CURRENT INTAKE STATUS above. Under NO circumstance should you ask for any field that is 'Already Provided'. Acknowledge the user's latest choice and prompt ONLY for the NEXT 'Pending' step in this exact order: Date -> Time Slot -> Pax -> Dietary -> Menu -> Estimation.` +
-      quoteCodeContext
+      quoteCodeContext + quoteSaveStatusContext
     )
 
     // Language instruction is placed BOTH first and last in the prompt —
@@ -619,6 +907,9 @@ export async function POST(req: NextRequest) {
       customerContext,
       extraContext,
       branchHallContext,
+      hallCapacityContext,
+      changeContext,
+      menuReviewContext,
       bookingIntelligence,
       intakeStatusContext,
       languageContext
@@ -646,6 +937,12 @@ export async function POST(req: NextRequest) {
         outdoorTime: "Great! What **Time** would you like the food to be served at your venue?\n\n• ☀️ **Lunch** (12:00 PM – 3:00 PM)\n• 🌙 **Dinner** (7:30 PM – 10:30 PM)\n• 🌅 **Morning Breakfast** (8:00 AM – 11:00 AM)",
         outdoorPax: "Got it! How many **Guests (Pax)** are you expecting for the catering? (e.g. 30, 50, 100, 150+ guests)",
         outdoorItemsPrompt: "Thank you! For {N} guests, which catering menu spread or items would you prefer?",
+        outdoorDietary: "Happy to suggest a menu for your outdoor catering! 😊 First, what is your **Dietary Preference**?\n\n• 🌿 **Pure Veg**\n• 🥗 **Veg & Non-Veg**\n• 🍗 **Non-Veg**",
+        askService: "Namaste! 🙏 I'm Arjun, hospitality and catering manager at Sangam Hotels Hyderabad. Happy to help! What would you like?\n\n• 🏛️ **Indoor** — catering in our AC banquet halls\n• 🚚 **Outdoor** — catering delivered to your venue, home or farmhouse",
+        outdoorBranch: "Great choice! Which branch should prepare your outdoor catering — **Peerzadiguda Flagship** or **Hayathnagar**?",
+        outdoorMenuIntro: "Here's a **{DIET}** outdoor spread for you — {SOURCE}:",
+        indoorMenuIntro: "Here's what the **{PKG}** (₹{PRICE}/plate) includes:",
+        menuHappy: "Are you **happy with this menu**? If so, I'll take the remaining details to prepare your quote — or just tell me what you'd like to change.",
         indoorBranch: "Namaste! 🙏 I'm Arjun, hospitality and catering manager at Sangam Hotels Hyderabad. Which branch do you prefer for your banquet event — **Peerzadiguda Flagship** or **Hayathnagar**?",
         indoorDate: "Wonderful! What is your planned **Event Date**?",
         indoorSlot: "Great! Which **Time Slot** are you planning for?\n\n• ☀️ **Lunch Slot** (11:00 AM – 3:00 PM)\n• 🌙 **Dinner Slot** (7:00 PM – 11:00 PM)\n• 🌅 **Full Day Slot** (6:00 AM – 10:00 PM)",
@@ -663,6 +960,12 @@ export async function POST(req: NextRequest) {
         outdoorTime: "గ్రేట్! మీ వేదిక వద్ద ఆహారం ఏ **సమయంలో** అందించాలనుకుంటున్నారు?\n\n• ☀️ **లంచ్** (12:00 PM – 3:00 PM)\n• 🌙 **డిన్నర్** (7:30 PM – 10:30 PM)\n• 🌅 **మార్నింగ్ బ్రేక్‌ఫాస్ట్** (8:00 AM – 11:00 AM)",
         outdoorPax: "అర్థమైంది! కేటరింగ్ కోసం మీరు ఎంతమంది **అతిథులను (Pax)** ఆశిస్తున్నారు? (ఉదా. 30, 50, 100, 150+ మంది)",
         outdoorItemsPrompt: "ధన్యవాదాలు! {N} అతిథుల కోసం, మీరు ఏ కేటరింగ్ మెనూ స్ప్రెడ్ లేదా ఐటమ్‌లను ఇష్టపడతారు?",
+        outdoorDietary: "మీ అవుట్‌డోర్ కేటరింగ్ కోసం మెనూ సూచించడానికి సంతోషం! 😊 ముందుగా, మీ **డైటరీ ప్రిఫరెన్స్** ఏమిటి?\n\n• 🌿 **ప్యూర్ వెజ్**\n• 🥗 **వెజ్ & నాన్-వెజ్**\n• 🍗 **నాన్-వెజ్**",
+        askService: "నమస్తే! 🙏 నేను అర్జున్, సంగం హోటల్స్ హైదరాబాద్‌లో హాస్పిటాలిటీ మరియు కేటరింగ్ మేనేజర్. మీకు ఏది కావాలి?\n\n• 🏛️ **ఇండోర్** — మా AC బ్యాంక్వెట్ హాళ్లలో కేటరింగ్\n• 🚚 **అవుట్‌డోర్** — మీ వేదిక, ఇల్లు లేదా ఫామ్‌హౌస్‌కు కేటరింగ్ డెలివరీ",
+        outdoorBranch: "మంచి ఎంపిక! మీ అవుట్‌డోర్ కేటరింగ్‌ను ఏ బ్రాంచ్ సిద్ధం చేయాలి — **పీర్జాదిగూడ ఫ్లాగ్‌షిప్** లేదా **హయత్‌నగర్**?",
+        outdoorMenuIntro: "మీ కోసం **{DIET}** అవుట్‌డోర్ మెనూ ({SOURCE}):",
+        indoorMenuIntro: "**{PKG}** (₹{PRICE}/ప్లేట్) లో ఉన్నవి:",
+        menuHappy: "ఈ మెనూతో సంతోషంగా ఉన్నారా? అయితే మిగిలిన వివరాలు తీసుకుని మీ కోట్ సిద్ధం చేస్తాను — లేదా ఏమి మార్చాలో చెప్పండి.",
         indoorBranch: "నమస్తే! 🙏 నేను అర్జున్, సంగం హోటల్స్ హైదరాబాద్‌లో హాస్పిటాలిటీ మరియు కేటరింగ్ మేనేజర్. మీ బ్యాంక్వెట్ ఈవెంట్ కోసం మీరు ఏ బ్రాంచ్‌ను ఇష్టపడతారు — **పీర్జాదిగూడ ఫ్లాగ్‌షిప్** లేదా **హయత్‌నగర్**?",
         indoorDate: "బాగుంది! మీ ప్రణాళికాబద్ధమైన **ఈవెంట్ తేదీ** ఏమిటి?",
         indoorSlot: "గ్రేట్! మీరు ఏ **టైమ్ స్లాట్** కోసం ప్లాన్ చేస్తున్నారు?\n\n• ☀️ **లంచ్ స్లాట్** (11:00 AM – 3:00 PM)\n• 🌙 **డిన్నర్ స్లాట్** (7:00 PM – 11:00 PM)\n• 🌅 **ఫుల్ డే స్లాట్** (6:00 AM – 10:00 PM)",
@@ -680,6 +983,12 @@ export async function POST(req: NextRequest) {
         outdoorTime: "बढ़िया! आप अपने वेन्यू पर किस **समय** भोजन परोसना चाहेंगे?\n\n• ☀️ **लंच** (12:00 PM – 3:00 PM)\n• 🌙 **डिनर** (7:30 PM – 10:30 PM)\n• 🌅 **मॉर्निंग ब्रेकफास्ट** (8:00 AM – 11:00 AM)",
         outdoorPax: "समझ गया! केटरिंग के लिए आप कितने **मेहमानों (Pax)** की उम्मीद कर रहे हैं? (जैसे 30, 50, 100, 150+ मेहमान)",
         outdoorItemsPrompt: "धन्यवाद! {N} मेहमानों के लिए, आप कौन सा केटरिंग मेनू स्प्रेड या आइटम पसंद करेंगे?",
+        outdoorDietary: "आपके आउटडोर केटरिंग के लिए मेनू सुझाने में खुशी होगी! 😊 पहले बताइए, आपकी **डाइटरी प्रेफरेंस** क्या है?\n\n• 🌿 **प्योर वेज**\n• 🥗 **वेज और नॉन-वेज**\n• 🍗 **नॉन-वेज**",
+        askService: "नमस्ते! 🙏 मैं अर्जुन हूँ, संगम होटल्स हैदराबाद में हॉस्पिटैलिटी और केटरिंग मैनेजर। आपको क्या चाहिए?\n\n• 🏛️ **इनडोर** — हमारे AC बैंक्वेट हॉल में केटरिंग\n• 🚚 **आउटडोर** — आपके वेन्यू, घर या फार्महाउस पर केटरिंग डिलीवरी",
+        outdoorBranch: "बढ़िया चुनाव! आपकी आउटडोर केटरिंग कौन सी ब्रांच तैयार करे — **पीरज़ादिगुड़ा फ्लैगशिप** या **हयातनगर**?",
+        outdoorMenuIntro: "आपके लिए **{DIET}** आउटडोर मेनू ({SOURCE}):",
+        indoorMenuIntro: "**{PKG}** (₹{PRICE}/प्लेट) में ये शामिल है:",
+        menuHappy: "क्या आप इस मेनू से खुश हैं? अगर हाँ, तो मैं आपका कोट बनाने के लिए बाकी जानकारी ले लूँगा — या बताइए क्या बदलना है।",
         indoorBranch: "नमस्ते! 🙏 मैं अर्जुन हूँ, संगम होटल्स हैदराबाद में हॉस्पिटैलिटी और केटरिंग मैनेजर। आपके बैंक्वेट इवेंट के लिए आप कौन सी ब्रांच पसंद करेंगे — **पीरज़ादिगुड़ा फ्लैगशिप** या **हयातनगर**?",
         indoorDate: "बहुत बढ़िया! आपकी योजनाबद्ध **इवेंट तारीख** क्या है?",
         indoorSlot: "बढ़िया! आप किस **टाइम स्लॉट** के लिए योजना बना रहे हैं?\n\n• ☀️ **लंच स्लॉट** (11:00 AM – 3:00 PM)\n• 🌙 **डिनर स्लॉट** (7:00 PM – 11:00 PM)\n• 🌅 **फुल डे स्लॉट** (6:00 AM – 10:00 PM)",
@@ -694,7 +1003,7 @@ export async function POST(req: NextRequest) {
     } as const
     const fb = FB[(responseLang as 'en' | 'te' | 'hi')] || FB.en
 
-    const fallbackHasConfirmKeyword = /\b(?:yes,?\s*)?(?:please\s+)?confirm(?:ed)?\b|\bgo ahead\b|\bproceed\b|\bbook it\b|\block (?:it|this) in\b/i.test(allUserText)
+    const fallbackHasConfirmKeyword = isBookingConfirmation(allUserText)
     const fallbackAdvanceStated = /advance/i.test(allUserText) && /\d/.test(allUserText)
     const outdoorMissingParts: string[] = []
     if (!customerName) outdoorMissingParts.push('**name**')
@@ -761,7 +1070,22 @@ export async function POST(req: NextRequest) {
     let editFlowSuggestions: Array<{ label: string; text: string }> | null = null
     let reply = ''
 
-    if (isIndoor && !isOutdoorFlow && hasPackageDetected && !hasBranchDetected) {
+    if (paxExceedsHallCapacity && !overCapacityAccepted && largestAvailableHall && !menuFirstActive) {
+      // Guest count is more than the largest free hall at this branch can
+      // seat — ask before quoting anything (see the capacity check above).
+      // Answered with the hall's count ("proceed with N guests" / a plain
+      // "yes"), the count drops to N and intake continues; "keep all P
+      // guests" sets overCapacityAccepted and this never asks again.
+      const q = buildCapacityQuestion(responseLang as 'en' | 'te' | 'hi', {
+        pax: effectiveAdults,
+        hall: largestAvailableHall.hall.name,
+        cap: largestAvailableHall.capacity,
+        branch: mentionedBranch,
+      })
+      reply = q.reply
+      editFlowSuggestions = q.suggestions
+      editFlowHandled = true
+    } else if (isIndoor && !isOutdoorFlow && hasPackageDetected && !hasBranchDetected) {
       // Bug fix (2026-09-28): this deterministic renderer used to run as
       // soon as a package was picked, with NO check that a branch had
       // actually been resolved. When the branch question got skipped
@@ -778,6 +1102,25 @@ export async function POST(req: NextRequest) {
       // computed, no exceptions.
       reply = fb.indoorBranch
       editFlowHandled = true
+    } else if (menuFirstKind === 'done' && indoorHasPackage && !(hasDateDetected && hasSlotDetected && hasPaxDetected)) {
+      // Menu-first (2026-10-26): the guest is happy with the menu, but the
+      // package was picked before any event details were taken. Collect the
+      // missing ones — date, then slot, then guest count — BEFORE the priced
+      // estimate. (Without this, "looks fine, let's move forward" just
+      // re-printed the same estimate with an unknown venue and no date.)
+      if (!hasDateDetected) { reply = fb.indoorDate; editFlowSuggestions = getDynamicDateChips() }
+      else if (!hasSlotDetected) {
+        reply = fb.indoorSlot
+        editFlowSuggestions = [
+          { label: '☀️ Lunch (11 AM - 3 PM)', text: 'We are planning for Lunch Slot (11:00 AM - 3:00 PM)' },
+          { label: '🌙 Dinner (7 PM - 11 PM)', text: 'We are planning for Dinner Slot (7:00 PM - 11:00 PM)' },
+          { label: '🌅 Full Day (6 AM - 10 PM)', text: 'We need the Full Day Slot (6:00 AM - 10:00 PM)' },
+        ]
+      } else {
+        reply = fb.indoorPax
+        editFlowSuggestions = [50, 100, 150, 200].map(n => ({ label: `👥 ${n} Guests`, text: `We are expecting approximately ${n} guests` }))
+      }
+      editFlowHandled = true
     } else if (isIndoor && !isOutdoorFlow && hasPackageDetected) {
       // Bug fix (2026-09-27): a genuine NEW question -- "do you have any
       // other veg menus", "what other menus are available" -- used to fall
@@ -788,7 +1131,11 @@ export async function POST(req: NextRequest) {
       // answering. Detect this specific ask up front and answer it for
       // real, from the live menu list, before any of the swap/re-render
       // logic below even runs.
-      const asksForOtherMenus = /\b(?:other|different|any\s+more|alternate|alternative)\b.{0,20}\bmenus?\b|\bmenus?\b.{0,20}\b(?:available|options?|we\s+have)\b/i.test(lastUserMsg)
+      // Also shown when the guest switched diet after picking a package
+      // (dietChangedAfterMenu) — the old package no longer fits, so list the
+      // new diet's packages to pick from instead of silently re-pricing.
+      const asksForOtherMenus = dietChangedAfterMenu
+        || /\b(?:other|different|any\s+more|alternate|alternative)\b.{0,20}\bmenus?\b|\bmenus?\b.{0,20}\b(?:available|options?|we\s+have)\b|\b(?:another|try (?:a |another )?(?:different )?)\s*(?:menu|package)\b/i.test(lastUserMsg)
       if (asksForOtherMenus) {
         const fmtMenu = (m: typeof liveCateringData.indoorMenus[number]) => `\u2022 \ud83c\udf7d\ufe0f **${m.name}** (\u20b9${m.pricePerPax}/plate)${m.description ? ` \u2014 ${m.description}` : ''}`
         const wantVeg = effectiveVegOnly
@@ -818,7 +1165,9 @@ export async function POST(req: NextRequest) {
         const dietLabel = wantVeg ? 'Veg' : 'Non-Veg'
         reply = matchingMenus.length > 0
           ? `${om.intro(dietLabel)}\n\n${matchingMenus.map(fmtMenu).join('\n')}\n\n${om.askPick}`
-          : om.none(dietLabel)
+          : dietChangedAfterMenu
+            ? (wantVeg ? fb.vegPackagesUnavailable : fb.nonVegPackagesUnavailable)
+            : om.none(dietLabel)
         editFlowHandled = true
       }
 
@@ -832,7 +1181,7 @@ export async function POST(req: NextRequest) {
         effectiveAdults,
         effectiveVegOnly,
         [],
-        lastUserMsg + ' ' + allUserText,
+        indoorQuoteText,
         liveCateringData,
         resolvedBranchId,
         indoorMenuBreakdown
@@ -868,9 +1217,10 @@ export async function POST(req: NextRequest) {
           return bySectionName
         }
 
+        const isRemovalMsg = (s: string) => /\b(?:remove|delete|drop|exclude|take out|skip|without|no need (?:of|for)|don'?t (?:want|need))\b/i.test(s)
         const sectionOverrides: Record<string, string[]> = {}
         for (const msg of allMsgs) {
-          if (msg.role !== 'user') continue
+          if (msg.role !== 'user' || isRemovalMsg(msg.content)) continue
           const sec = findSectionForDishText(msg.content)
           if (!sec) continue
           const dishes = findDishesInSectionFromText(sec, msg.content)
@@ -879,7 +1229,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const editSection = findSectionForDishText(lastUserMsg)
+        const editSection = isRemovalMsg(lastUserMsg) ? null : findSectionForDishText(lastUserMsg)
         const editDishesNamed = editSection ? findDishesInSectionFromText(editSection, lastUserMsg) : []
         const isKeepCurrentPhrase = /keep\s+(?:the\s+)?current\s+.*\s*selection/i.test(lastUserMsg)
 
@@ -896,6 +1246,8 @@ export async function POST(req: NextRequest) {
           customerDetailsLabel: string
           nameLabel: string
           phoneLabel: string
+          bookingCodeLabel: string
+          bookingCodePending: string
         }> = {
           en: {
             browseIntro: (section, limit) => `Here are the available dishes for **${section}**${limit ? ` (pick up to ${limit})` : ''} -- tap one to swap it in:`,
@@ -910,6 +1262,8 @@ export async function POST(req: NextRequest) {
             customerDetailsLabel: 'Your Details',
             nameLabel: 'Name',
             phoneLabel: 'Phone/WhatsApp',
+            bookingCodeLabel: 'Booking Code',
+            bookingCodePending: 'Booking code will be generated once you share your phone/WhatsApp number and event date',
           },
           te: {
             browseIntro: (section, limit) => `**${section}** \u0c15\u0c4b\u0c38\u0c02 \u0c05\u0c02\u0c26\u0c41\u0c2c\u0c3e\u0c1f\u0c41\u0c32\u0c4b \u0c09\u0c28\u0c4d\u0c28 \u0c35\u0c02\u0c1f\u0c15\u0c3e\u0c32\u0c41 \u0c07\u0c35\u0c3f${limit ? ` (${limit} \u0c35\u0c30\u0c15\u0c41 \u0c0e\u0c02\u0c1a\u0c41\u0c15\u0c4b\u0c02\u0c21\u0c3f)` : ''} -- \u0c2e\u0c3e\u0c30\u0c4d\u0c1a\u0c21\u0c3e\u0c28\u0c3f\u0c15\u0c3f \u0c12\u0c15\u0c1f\u0c3f \u0c28\u0c4a\u0c15\u0c4d\u0c15\u0c02\u0c21\u0c3f:`,
@@ -924,6 +1278,8 @@ export async function POST(req: NextRequest) {
             customerDetailsLabel: '\u0c2e\u0c40 \u0c35\u0c3f\u0c35\u0c30\u0c3e\u0c32\u0c41',
             nameLabel: '\u0c2a\u0c47\u0c30\u0c41',
             phoneLabel: '\u0c2b\u0c4b\u0c28\u0c4d/\u0c35\u0c3e\u0c1f\u0c4d\u0c38\u0c3e\u0c2a\u0c4d',
+            bookingCodeLabel: '\u0c2c\u0c41\u0c15\u0c3f\u0c02\u0c17\u0c4d \u0c15\u0c4b\u0c21\u0c4d',
+            bookingCodePending: '\u0c2e\u0c40 \u0c2b\u0c4b\u0c28\u0c4d/\u0c35\u0c3e\u0c1f\u0c4d\u0c38\u0c3e\u0c2a\u0c4d \u0c28\u0c02\u0c2c\u0c30\u0c4d \u0c2e\u0c30\u0c3f\u0c2f\u0c41 \u0c08\u0c35\u0c46\u0c02\u0c1f\u0c4d \u0c24\u0c47\u0c26\u0c40 \u0c07\u0c1a\u0c4d\u0c1a\u0c3f\u0c28 \u0c24\u0c30\u0c4d\u0c35\u0c3e\u0c24 \u0c2c\u0c41\u0c15\u0c3f\u0c02\u0c17\u0c4d \u0c15\u0c4b\u0c21\u0c4d \u0c30\u0c42\u0c2a\u0c4a\u0c02\u0c26\u0c3f\u0c02\u0c1a\u0c2c\u0c21\u0c41\u0c24\u0c41\u0c02\u0c26\u0c3f',
           },
           hi: {
             browseIntro: (section, limit) => `**${section}** \u0915\u0947 \u0932\u093f\u090f \u0909\u092a\u0932\u092c\u094d\u0927 \u0921\u093f\u0936 \u092f\u0939 \u0939\u0948\u0902${limit ? ` (\u0905\u0927\u093f\u0915\u0924\u092e ${limit} \u0938\u0947\u0932\u0947\u0902)` : ''} -- \u092c\u0926\u0932\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0915\u093f\u0938\u0940 \u090f\u0915 \u092a\u0930 \u091f\u0947\u092a \u0915\u0930\u0947\u0902:`,
@@ -938,11 +1294,34 @@ export async function POST(req: NextRequest) {
             customerDetailsLabel: '\u0906\u092a\u0915\u0940 \u091c\u093e\u0928\u0915\u093e\u0930\u0940',
             nameLabel: '\u0928\u093e\u092e',
             phoneLabel: '\u092b\u094b\u0928/\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u0910\u092a',
+            bookingCodeLabel: '\u092c\u0941\u0915\u093f\u0902\u0917 \u0915\u094b\u0921',
+            bookingCodePending: '\u0906\u092a\u0915\u093e \u092b\u094b\u0928/\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a \u0928\u0902\u092c\u0930 \u0914\u0930 \u0907\u0935\u0947\u0902\u091f \u0915\u0940 \u0924\u093e\u0930\u0940\u0916 \u092e\u093f\u0932\u0928\u0947 \u0915\u0947 \u092c\u093e\u0926 \u092c\u0941\u0915\u093f\u0902\u0917 \u0915\u094b\u0921 \u092c\u0928\u093e\u092f\u093e \u091c\u093e\u090f\u0917\u093e',
           },
         }
         const editL = EDIT_L[(responseLang as 'en' | 'te' | 'hi')] || EDIT_L.en
 
+        // The booking code (lib/booking-code.ts) on every scripted indoor
+        // estimate/summary (2026-10-23) — previously only AI-written replies
+        // showed it, so guests on this deterministic path never saw a code.
+        const bookingCodeLine = generatedQuoteCode
+          ? `🔖 **${editL.bookingCodeLabel}**: ${generatedQuoteCode}\n\n`
+          : `🔖 ${editL.bookingCodePending}\n\n`
+
         const renderEstimation = (quote: ReturnType<typeof generatePopularCateringQuote>, swapPrefix = ''): string => {
+          // Menu-first, before the guest has said they're happy with the menu:
+          // show the dishes only (no priced estimate, hall or booking code yet)
+          // and ask the review question. The estimate comes once the event
+          // details are in.
+          if (menuFirstActive) {
+            editFlowSuggestions = [
+              { label: '👍 Happy with this menu', text: 'Yes, I am happy with this menu, please continue' },
+              { label: '✏️ Change some dishes', text: 'I would like to change some dishes in this menu' },
+              { label: '🔄 Other packages', text: 'Show me the other menu packages' },
+            ]
+            return swapPrefix +
+              fb.indoorMenuIntro.replace('{PKG}', quote.packageName ?? 'package').replace('{PRICE}', String(quote.pricePerPlate)) + '\n\n' +
+              quote.menuItems.join('\n\n') + '\n\n' + fb.menuHappy
+          }
           const mult = loyaltyDiscount > 0 ? 0.95 : 1.0
           const totalWithDiscount = Math.round(quote.finalTotal * mult)
           const discountLine = loyaltyDiscount > 0 ? `\n\u2022 **${editL.loyaltyDiscountLabel}**: -\u20b9${Math.round(quote.finalTotal * 0.05).toLocaleString('en-IN')}` : ''
@@ -952,6 +1331,7 @@ export async function POST(req: NextRequest) {
             `${quote.menuItems.join('\n\n')}\n\n` +
             `\ud83d\udcb0 **${editL.estimationLabel}**: \u20b9${quote.pricePerPlate}/plate \u00d7 ${effectiveAdults} ${editL.guestsLabel} = **\u20b9${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
             `${quote.trayBreakdown.join('\n')}\n\n` +
+            bookingCodeLine +
             `${editL.swapPrompt}\n\n${indoorConfirmCta}`
         }
 
@@ -968,8 +1348,8 @@ export async function POST(req: NextRequest) {
         // consolidated Booking Summary that combines the quote recap with
         // the customer's own details, shown exactly once at the moment
         // the booking actually becomes save-able.
-        const isConfirmOrDetailsTurn = !editSection && (
-          /\b(?:yes,?\s*)?(?:please\s+)?confirm(?:ed)?\b|\bgo ahead\b|\bproceed\b|\bbook it\b|\block (?:it|this) in\b/i.test(lastUserMsg)
+        const isConfirmOrDetailsTurn = !editSection && !menuFirstActive && (
+          isBookingConfirmation(lastUserMsg)
           || /\b\d{10}\b/.test(lastUserMsg)
           || /whatsapp/i.test(lastUserMsg)
           || /\badvance\b/i.test(lastUserMsg)
@@ -988,6 +1368,7 @@ export async function POST(req: NextRequest) {
             `${quote.menuItems.join('\n\n')}\n\n` +
             `\ud83d\udcb0 **${editL.estimationLabel}**: \u20b9${quote.pricePerPlate}/plate \u00d7 ${effectiveAdults} ${editL.guestsLabel} = **\u20b9${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
             `${quote.trayBreakdown.join('\n')}\n\n` +
+            bookingCodeLine +
             `\ud83d\udc64 **${editL.customerDetailsLabel}**:\n${custLines}\n\n` +
             `${ctaL.indoorNoted(customerName || '', fallbackAdvanceStated || /\badvance\b/i.test(lastUserMsg), detectedPhone || '')}`
         }
@@ -996,7 +1377,7 @@ export async function POST(req: NextRequest) {
           if (detectedPhone) {
             const finalQuote = generatePopularCateringQuote(
               'inhouse', mentionedBranch, effectiveAdults, effectiveVegOnly, [],
-              lastUserMsg + ' ' + allUserText, liveCateringData, resolvedBranchId, indoorMenuBreakdown, sectionOverrides
+              indoorQuoteText, liveCateringData, resolvedBranchId, indoorMenuBreakdown, sectionOverrides, indoorDishChanges
             )
             reply = renderBookingSummary(finalQuote)
           } else {
@@ -1009,7 +1390,7 @@ export async function POST(req: NextRequest) {
           // confirm exactly which real dish(es) were swapped in.
           const finalQuote = generatePopularCateringQuote(
             'inhouse', mentionedBranch, effectiveAdults, effectiveVegOnly, [],
-            lastUserMsg + ' ' + allUserText, liveCateringData, resolvedBranchId, indoorMenuBreakdown, sectionOverrides
+            indoorQuoteText, liveCateringData, resolvedBranchId, indoorMenuBreakdown, sectionOverrides, indoorDishChanges
           )
           reply = renderEstimation(finalQuote, editL.swapConfirmed(editDishesNamed.map(d => d.name).join(', '), editSection.sectionName))
           editFlowHandled = true
@@ -1037,18 +1418,120 @@ export async function POST(req: NextRequest) {
           // and the numbers/dishes shown can never drift out of sync.
           const finalQuote = generatePopularCateringQuote(
             'inhouse', mentionedBranch, effectiveAdults, effectiveVegOnly, [],
-            lastUserMsg + ' ' + allUserText, liveCateringData, resolvedBranchId, indoorMenuBreakdown, sectionOverrides
+            indoorQuoteText, liveCateringData, resolvedBranchId, indoorMenuBreakdown, sectionOverrides, indoorDishChanges
           )
-          reply = renderEstimation(finalQuote)
+          reply = renderEstimation(finalQuote, indoorDishAck)
           editFlowHandled = true
         }
       }
       } // end if (!asksForOtherMenus)
     }
 
+    // ── Menu-first steps (lib/menu-first.ts) ─────────────────────────────
+    // service → branch → diet → menu are fixed questions/renders, so they are
+    // answered here directly rather than left to the AI; the AI only comes
+    // back in for the review stage (changes to the menu) and once the guest
+    // is happy and the usual event details are collected.
+    const yesNoChips = (extra: Array<{ label: string; text: string }> = []) => [
+      { label: '👍 Happy with this menu', text: 'Yes, I am happy with this menu, please continue' },
+      { label: '✏️ Change some dishes', text: 'I would like to change some dishes in this menu' },
+      ...extra,
+    ]
+    const dietChips = isOutdoorFlow
+      ? [
+          { label: '🌿 Pure Veg', text: 'Pure Veg for the outdoor catering menu' },
+          { label: '🥗 Veg & Non-Veg', text: 'Veg and Non-Veg for the outdoor catering menu' },
+          { label: '🍗 Non-Veg', text: 'Non-Veg for the outdoor catering menu' },
+        ]
+      : [
+          { label: '🌿 Pure Veg', text: 'We prefer Pure Vegetarian menu packages' },
+          { label: '🥗 Veg & Non-Veg', text: 'We prefer Veg and Non-Veg menu packages' },
+          { label: '🍗 Non-Veg', text: 'We prefer Non-Veg menu packages' },
+        ]
+    const renderOutdoorMenu = (): string => {
+      const s = activeOutdoorSuggestion!
+      return fb.outdoorMenuIntro.replace('{DIET}', s.diet === 'veg' ? 'Pure Veg' : 'Non-Veg').replace('{SOURCE}', describeSuggestionSource(s)) + '\n\n' +
+        s.sections.map(sec => `### ${sec.icon} ${sec.label}\n${sec.dishes.map(d => `• ${d}`).join('\n')}`).join('\n\n') + '\n\n' + fb.menuHappy
+    }
+    const renderIndoorSpread = (): string => {
+      const q = generatePopularCateringQuote('inhouse', mentionedBranch, effectiveAdults, effectiveVegOnly, [], indoorQuoteText, liveCateringData, resolvedBranchId, indoorMenuBreakdown, undefined, indoorDishChanges)
+      return fb.indoorMenuIntro.replace('{PKG}', q.packageName ?? 'package').replace('{PRICE}', String(q.pricePerPlate)) + '\n\n' + q.menuItems.join('\n\n') + '\n\n' + fb.menuHappy
+    }
+    const renderIndoorPackageList = (): string => {
+      const fmt = (m: typeof liveCateringData.indoorMenus[number]) => `• 🍽️ **${m.name}** (₹${m.pricePerPax}/plate)${m.description ? ` — ${m.description}` : ''}`
+      const isVegRow = (m: typeof liveCateringData.indoorMenus[number]) => (m.dietaryType || '').toLowerCase().includes('veg') && !(m.dietaryType || '').toLowerCase().includes('non')
+      const pool = liveCateringData.indoorMenus.filter(m => effectiveVegOnly ? isVegRow(m) : !isVegRow(m))
+      if (pool.length === 0) return effectiveVegOnly ? fb.vegPackagesUnavailable : fb.nonVegPackagesUnavailable
+      return `${effectiveVegOnly ? fb.vegPackagesIntro : fb.nonVegPackagesIntro}\n\n${pool.map(fmt).join('\n')}\n\n${fb.selectPackage}`
+    }
+    // Read back whatever the guest already told us in their opening message
+    // (once), so they can see it was understood — e.g. "📝 Noted: 200 guests ·
+    // Non-Veg · Mon, 2 Nov 2026 · Dinner" — and aren't asked for it again.
+    const notedLabel = ({ en: 'Noted', te: 'గమనించాను', hi: 'नोट किया' } as Record<string, string>)[responseLang] || 'Noted'
+    const notedParts: string[] = []
+    if (hasPaxDetected) notedParts.push(`${effectiveAdults} guests`)
+    if (lastDietaryDetected) notedParts.push(lastDietaryDetected === 'veg' ? 'Pure Veg' : 'Non-Veg')
+    if (earlyDetectedEventDate) {
+      notedParts.push(new Date(`${earlyDetectedEventDate}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }))
+    }
+    if (hasSlotDetected) notedParts.push(/full day/i.test(lowerAllText) ? 'Full Day' : /lunch/i.test(lowerAllText) ? 'Lunch' : 'Dinner')
+    const notedPrefix = notedParts.length > 0 && !allMsgs.some(m => m.role === 'assistant' && m.content.startsWith('📝'))
+      ? `📝 ${notedLabel}: ${notedParts.join(' · ')}\n\n`
+      : ''
+    let menuFirstHandled = false
+    if (!editFlowHandled && menuFirstActive) {
+      if (menuFirstKind === 'service') {
+        reply = notedPrefix + fb.askService
+        editFlowSuggestions = [
+          { label: '🏛️ Indoor Banquet Hall', text: 'Indoor banquet hall catering' },
+          { label: '🚚 Outdoor Catering', text: 'Outdoor catering at my venue' },
+        ]
+        menuFirstHandled = true
+      } else if (menuFirstKind === 'branch') {
+        reply = notedPrefix + (isOutdoorFlow ? fb.outdoorBranch : fb.indoorBranch)
+        editFlowSuggestions = isOutdoorFlow
+          ? [
+              { label: '📍 Peerzadiguda Flagship', text: 'Peerzadiguda Flagship branch for my outdoor catering' },
+              { label: '📍 Hayathnagar HQ', text: 'Hayathnagar branch for my outdoor catering' },
+            ]
+          : [
+              { label: '📍 Peerzadiguda Flagship', text: 'I prefer Peerzadiguda Flagship branch for the banquet hall' },
+              { label: '📍 Hayathnagar HQ', text: 'I prefer Hayathnagar branch for the banquet hall' },
+            ]
+        menuFirstHandled = true
+      } else if (menuFirstKind === 'diet') {
+        reply = isOutdoorFlow ? fb.outdoorDietary : fb.indoorDietary
+        editFlowSuggestions = dietChips
+        menuFirstHandled = true
+      } else if (menuFirstKind === 'menu') {
+        if (isOutdoorFlow && activeOutdoorSuggestion) {
+          reply = renderOutdoorMenu()
+          editFlowSuggestions = yesNoChips()
+          menuFirstHandled = true
+        } else if (!isOutdoorFlow && indoorPackagePicked) {
+          reply = renderIndoorSpread()
+          editFlowSuggestions = yesNoChips([{ label: '🔄 Other packages', text: 'Show me the other menu packages' }])
+          menuFirstHandled = true
+        } else if (!isOutdoorFlow) {
+          // No package chosen yet: list the diet's packages (chips come from the reply).
+          reply = renderIndoorPackageList()
+          menuFirstHandled = true
+        }
+      }
+    }
+
     // 4. Query AI Providers Cascade
-    if (!editFlowHandled) {
+    let aiRawReply = ''
+    if (!editFlowHandled && !menuFirstHandled) {
       reply = (await askFreeModels(systemPrompt, recentMsgs)) || ''
+      aiRawReply = reply
+      // Review stage: the AI applies a requested change; the question that
+      // follows it is ours, so it is always there and in the right language.
+      if (menuFirstKind === 'review') {
+        if (!reply) reply = isOutdoorFlow && activeOutdoorSuggestion ? renderOutdoorMenu() : indoorPackagePicked ? renderIndoorSpread() : ''
+        else if (!MENU_HAPPY_MARKER.test(reply)) reply = `${reply}\n\n${fb.menuHappy}`
+        if (reply) editFlowSuggestions = yesNoChips(isOutdoorFlow ? [] : [{ label: '🔄 Other packages', text: 'Show me the other menu packages' }])
+      }
 
       // Bug fix (2026-09-28): the AI is told (STRICT SEQUENTIAL INTAKE) to
       // always ask for the branch before date/slot/pax/dietary/package --
@@ -1072,14 +1555,18 @@ export async function POST(req: NextRequest) {
       // scripted fallback below already uses when the AI fails outright,
       // so this just makes that order non-negotiable even when the AI
       // *does* respond, instead of only when it doesn't.
-      if (isIndoor && !isOutdoorFlow && reply) {
+      if (menuFirstKind === 'review') {
+        // Handled above — the review stage never jumps ahead to event details.
+      } else if (isIndoor && !isOutdoorFlow && reply) {
         if (!hasBranchDetected) reply = fb.indoorBranch
         else if (!hasDateDetected) reply = fb.indoorDate
         else if (!hasSlotDetected) reply = fb.indoorSlot
         else if (!hasPaxDetected) reply = fb.indoorPax
         else if (!lastDietaryDetected) reply = fb.indoorDietary
       } else if (isOutdoorFlow && reply) {
-        if (!hasOccasionDetected) reply = fb.outdoorOccasion
+        // Diet comes before anything else once the guest asks for a suggestion.
+        if (outdoorDietMissing) reply = fb.outdoorDietary
+        else if (!hasOccasionDetected) reply = fb.outdoorOccasion
         else if (!hasDateDetected) reply = fb.outdoorDate
         else if (!hasTimeDetected) reply = fb.outdoorTime
         else if (!hasPaxDetected) reply = fb.outdoorPax
@@ -1097,20 +1584,23 @@ export async function POST(req: NextRequest) {
         // turns to a focused details-ask (or, once every mandatory
         // outdoor detail is on file, one consolidated summary) instead.
         const isOutdoorConfirmOrDetailsTurn = (
-          /\b(?:yes,?\s*)?(?:please\s+)?confirm(?:ed)?\b|\bgo ahead\b|\bproceed\b|\bbook it\b|\block (?:it|this) in\b/i.test(lastUserMsg)
+          isBookingConfirmation(lastUserMsg)
           || /\b\d{10}\b/.test(lastUserMsg)
           || /whatsapp/i.test(lastUserMsg)
           || /\badvance\b/i.test(lastUserMsg)
         )
         const outdoorMandatoryPresent = !!(detectedPhone && customerName && detectedAddress)
+        // A suggestion was asked for but veg / non-veg isn't known: ask that first.
+        if (outdoorDietMissing) {
+          reply = fb.outdoorDietary
         // If both pax and items are present (or if user already gave both upfront), estimate cost!
-        if (hasPaxDetected && hasOutdoorItemsDetected && isOutdoorConfirmOrDetailsTurn) {
+        } else if (hasPaxDetected && hasOutdoorItemsDetected && isOutdoorConfirmOrDetailsTurn) {
           if (outdoorMandatoryPresent) {
             const pax = (hasPaxDetected && effectiveAdults > 0) ? effectiveAdults : 50
             const isVeg = lastDietaryDetected === 'veg' || effectiveVegOnly || lowerAllText.includes('veg spread')
-            const quote = generatePopularCateringQuote(
+            const quote = suggestedOutdoorQuote ?? generatePopularCateringQuote(
               'outdoor', mentionedBranch || 'Hyderabad & Suburbs', pax, isVeg, [],
-              lastUserMsg + ' ' + allUserText, liveCateringData
+              outdoorQuoteText, liveCateringData
             )
             const mult = loyaltyDiscount > 0 ? 0.95 : 1.0
             const totalWithDiscount = Math.round(quote.finalTotal * mult)
@@ -1123,8 +1613,9 @@ export async function POST(req: NextRequest) {
             reply = `${quote.headline}\n\n` +
               `📋 **Menu Spread & Dishes Included**:\n${quote.menuItems.join('\n\n')}\n\n` +
               `🍛 **Portion & Tray Sizing for ${pax} Guests**:\n${quote.trayBreakdown.join('\n')}\n\n` +
-              `💰 **Estimation**: ₹${quote.pricePerPlate}/plate × ${pax} Guests = **₹${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
+              outdoorEstimateLine(quote.pricePerPlate, pax, totalWithDiscount, discountLine) +
               `👤 **Your Details**:\n${custLines}\n\n` +
+              (generatedQuoteCode ? `🔖 **Booking Code**: ${generatedQuoteCode}\n\n` : '') +
               `${ctaL.outdoorNoted(customerName || '', fallbackAdvanceStated || /\badvance\b/i.test(lastUserMsg), detectedPhone || '')}`
           } else {
             reply = outdoorConfirmCta
@@ -1133,13 +1624,13 @@ export async function POST(req: NextRequest) {
           const pax = (hasPaxDetected && effectiveAdults > 0) ? effectiveAdults : 50
           const isVeg = lastDietaryDetected === 'veg' || effectiveVegOnly || lowerAllText.includes('veg spread')
 
-          const quote = generatePopularCateringQuote(
+          const quote = suggestedOutdoorQuote ?? generatePopularCateringQuote(
             'outdoor',
             mentionedBranch || 'Hyderabad & Suburbs',
             pax,
             isVeg,
             [],
-            lastUserMsg + ' ' + allUserText,
+            outdoorQuoteText,
             liveCateringData
           )
 
@@ -1152,18 +1643,21 @@ export async function POST(req: NextRequest) {
             `${quote.menuItems.join('\n\n')}\n\n` +
             `🍛 **Portion & Tray Sizing for ${pax} Guests**:\n` +
             `${quote.trayBreakdown.join('\n')}\n\n` +
-            `💰 **Estimation**: ₹${quote.pricePerPlate}/plate × ${pax} Guests = **₹${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
+            outdoorEstimateLine(quote.pricePerPlate, pax, totalWithDiscount, discountLine) +
             `✨ **What's Included at Your Venue**:\n` +
             `• Full-service buffet setup (chafing dishes, warmers, aesthetic buffet tables)\n` +
             `• Live Tandoor & Roti preparation counter on site\n` +
             `• Dedicated uniform serving staff\n` +
             `• Premium disposable plates, cutlery & napkins\n\n` +
+            (generatedQuoteCode
+              ? `🔖 **Booking Code**: ${generatedQuoteCode}\n\n`
+              : `🔖 Booking code will be generated once you share your phone/WhatsApp number and event date\n\n`) +
             `Just tell me if you'd like to swap or add anything, or use the quick action chips below.\n\n${outdoorConfirmCta}`
-        } else if (!hasOccasionDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
+        } else if (!hasOccasionDetected && !hasPaxDetected && (!hasOutdoorItemsDetected || menuFirstFlow)) {
           reply = fb.outdoorOccasion
-        } else if (!hasDateDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
+        } else if (!hasDateDetected && !hasPaxDetected && (!hasOutdoorItemsDetected || menuFirstFlow)) {
           reply = fb.outdoorDate
-        } else if (!hasTimeDetected && !hasPaxDetected && !hasOutdoorItemsDetected) {
+        } else if (!hasTimeDetected && !hasPaxDetected && (!hasOutdoorItemsDetected || menuFirstFlow)) {
           reply = fb.outdoorTime
         } else if (!hasPaxDetected) {
           reply = fb.outdoorPax
@@ -1191,7 +1685,9 @@ export async function POST(req: NextRequest) {
         }
       } else if (!hasBranchDetected) {
         reply = fb.indoorBranch
-      } else if (hasPackageDetected) {
+      } else if (hasPackageDetected && (!menuFirstFlow || (hasDateDetected && hasSlotDetected && hasPaxDetected))) {
+        // (menu-first: the date, slot and guest count are collected after the
+        // guest is happy with the menu and before any priced estimate.)
         // Indoor Banquet Quote -- hasBranchDetected is guaranteed true here
         // (checked above), so mentionedBranch is always a real branch name,
         // never the placeholder.
@@ -1201,21 +1697,26 @@ export async function POST(req: NextRequest) {
           effectiveAdults,
           effectiveVegOnly,
           [],
-          lastUserMsg + ' ' + allUserText,
+          indoorQuoteText,
           liveCateringData,
           resolvedBranchId,
-          indoorMenuBreakdown
+          indoorMenuBreakdown,
+          undefined,
+          indoorDishChanges
         )
 
         const mult = loyaltyDiscount > 0 ? 0.95 : 1.0
         const totalWithDiscount = Math.round(quote.finalTotal * mult)
         const discountLine = loyaltyDiscount > 0 ? `\n• **5% Loyalty Discount Applied**: -₹${Math.round(quote.finalTotal * 0.05).toLocaleString('en-IN')}` : ''
 
-        reply = `${quote.headline}\n\n` +
+        reply = indoorDishAck + `${quote.headline}\n\n` +
           `📋 **Menu Spread & Dishes Included**:\n` +
           `${quote.menuItems.join('\n\n')}\n\n` +
           `💰 **Estimation**: ₹${quote.pricePerPlate}/plate × ${effectiveAdults} Guests = **₹${totalWithDiscount.toLocaleString('en-IN')}**${discountLine}\n\n` +
           `${quote.trayBreakdown.join('\n')}\n\n` +
+          (generatedQuoteCode
+            ? `🔖 **Booking Code**: ${generatedQuoteCode}\n\n`
+            : `🔖 Booking code will be generated once you share your phone/WhatsApp number and event date\n\n`) +
           `Just tell me if you'd like to swap or add anything, or use the quick action chips below to customize dishes.\n\n${indoorConfirmCta}`
       } else if (!hasDateDetected) {
         reply = fb.indoorDate
@@ -1240,6 +1741,11 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+
+    // Lead every scripted reply with the human acknowledgement of what the
+    // guest just changed (an AI-written reply is told to do this itself via
+    // changeContext, so it's left as written).
+    if (changeAck && reply && reply !== aiRawReply) reply = changeAck + reply
 
     // 6. Action Parser: EVERYTHING lives in sangam.quotes as JSON until
     // payment is done. Payment is not integrated yet, so a real
@@ -1306,7 +1812,7 @@ export async function POST(req: NextRequest) {
     const advanceAmountEarly = advanceMatchEarly ? parseInt(advanceMatchEarly[1].replace(/,/g, ''), 10) : 0
     const isExplicitConfirmation = !!(
       advanceAmountEarly > 0 ||
-      /\b(?:yes,?\s*)?(?:please\s+)?confirm(?:ed)?\b|\bgo ahead\b|\bproceed\b|\bbook it\b|\block (?:it|this) in\b|\btentatively booked\b/i.test(allUserText)
+      isBookingConfirmation(allUserText)
     )
 
     // Payment integration doesn't exist yet. This is the single switch that
@@ -1316,7 +1822,20 @@ export async function POST(req: NextRequest) {
     // eventmgmt write block further down never runs.
     const paymentCompleted = false
 
-    if (targetPhone && isExplicitConfirmation && mandatoryDetailsPresent) {
+    // The booking code to save under — rebuilt from targetPhone (which a
+    // [SAVE_QUOTE:...] tag can override) so the saved code always matches
+    // the phone saved with it. Null while the event date (or, for indoor,
+    // the branch) is still unknown: no code means nothing to save yet.
+    const saveBookingCode = generateChatBookingCode({
+      serviceType: bookingServiceType,
+      branchName: mentionedBranch || null,
+      eventDate: bookingEventDate,
+      phone: targetPhone,
+    })
+
+    let quoteSaved = false
+    if (targetPhone && saveBookingCode && bookingEventDate && isExplicitConfirmation && mandatoryDetailsPresent
+      && !(isIndoor && dietChangedAfterMenu)) {
       try {
         // Bug fix (2026-10-07): this used to regex-scan the AI's own reply
         // text for a "SGM-xxxx"-looking substring and save THAT as the real
@@ -1328,29 +1847,43 @@ export async function POST(req: NextRequest) {
         // echo verbatim (see quoteCodeContext above), so it's always the
         // same real code whether read from `reply` or used here directly —
         // no more parsing the AI's prose to find out what it decided to type.
-        let quoteNumber = generatedQuoteCode
+        const quoteNumber = saveBookingCode
 
         const validUntil = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString()
 
-        // Extract date if mentioned or default to 7 days ahead
-        const targetDate = extractExplicitEventDate(reply + ' ' + allUserText)
-          || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+        // The same guest-stated date the booking code was built from — it
+        // used to fall back to "7 days from now" when none was found, which
+        // would now bake a made-up date into the booking code itself.
+        const targetDate = bookingEventDate
 
-        // Extract total amount if mentioned
-        const totalMatch = (reply + ' ' + allUserText).match(/(?:Grand Total|Total|Amount|₹)\s*[:=–-]?\s*₹?\s*([\d,]+)/i)
-        const parsedTotal = totalMatch ? parseInt(totalMatch[1].replace(/,/g, ''), 10) : 0
-        // Fallback plate rate, only used if no total could be parsed from the
-        // conversation: prefer the nearest real live price (matching diet)
-        // over a hardcoded guess.
+        // Total amount — computed server-side with the same quote engine
+        // that renders the estimate (2026-10-23). This used to regex the
+        // first "₹<number>" out of the reply + conversation, which was
+        // usually the per-plate rate: a confirmed ₹700/plate × 200 guest
+        // booking was saved with total_amount = 700.
         const liveMenuPool = isIndoor ? liveCateringData.indoorMenus : liveCateringData.outdoorMenus
         const dietMatchedLive = liveMenuPool.filter(m => {
           const dt = (m.dietaryType || '').toLowerCase()
           const isVegRow = dt.includes('veg') && !dt.includes('non')
           return effectiveVegOnly ? isVegRow : true
         })
-        const fallbackPlateRate = (dietMatchedLive[0] || liveMenuPool[0])?.pricePerPax
-          ?? (isIndoor ? (effectiveVegOnly ? 600 : 800) : 450)
-        const calculatedTotal = parsedTotal > 0 ? parsedTotal : Math.round(fallbackPlateRate * (effectiveAdults || 20) * (loyaltyDiscount > 0 ? 0.95 : 1))
+        const savedQuote = customMenuQuote ?? generatePopularCateringQuote(
+          isIndoor ? 'inhouse' : 'outdoor',
+          isIndoor ? mentionedBranch : (mentionedBranch || 'Hyderabad & Suburbs'),
+          effectiveAdults || 20,
+          effectiveVegOnly,
+          [],
+          isIndoor ? indoorQuoteText : outdoorQuoteText,
+          liveCateringData,
+          resolvedBranchId,
+          indoorMenuBreakdown,
+          undefined,
+          isIndoor ? indoorDishChanges : undefined
+        )
+        const calculatedTotal = Math.round(savedQuote.finalTotal * (loyaltyDiscount > 0 ? 0.95 : 1))
+        // No real price on file (e.g. outdoor dishes still pending pricing)
+        // gives a 0 total — save null ("to be priced") instead of a fake 0.
+        const savedTotal = calculatedTotal > 0 ? calculatedTotal : null
 
         // Real branch_id — resolved above (step 3) for the hall/menu lookup,
         // reused here so nothing is silently lost even before a real
@@ -1376,10 +1909,18 @@ export async function POST(req: NextRequest) {
         // never carried a real menu_id, only a fixed display name. Both are
         // fixed here: match against the live catalog first (real dish_id),
         // and resolve the actual eventmgmt.menu row that priced this quote.
-        const resolvedLiveMenu = dietMatchedLive[0] || liveMenuPool[0] || null
+        // (2026-10-24) For indoor, the menu is the one the quote was actually
+        // priced from (the guest's latest package pick) — it used to be the
+        // first diet-matching live menu, whatever package was chosen. For
+        // outdoor, dishes are the CURRENT list after any add/remove edits,
+        // not every dish ever mentioned.
+        const quotedMenu = isIndoor && savedQuote.menuId
+          ? liveCateringData.indoorMenus.find(m => m.id === savedQuote.menuId) ?? null
+          : null
+        const resolvedLiveMenu = quotedMenu || dietMatchedLive[0] || liveMenuPool[0] || null
         const resolvedMenuId = resolvedLiveMenu?.id ?? null
         const finalGuestCount = effectiveAdults || 20
-        const matchedDishes = extractDishesFromText(allUserText, liveCateringData, finalGuestCount)
+        const matchedDishes = extractDishesFromText(isIndoor ? allUserText : outdoorQuoteText, liveCateringData, finalGuestCount)
         if (matchedDishes.length === 0) {
           console.warn(`[Quote Save] No dishes could be matched from the conversation for quote ${quoteNumber ?? '(pending)'} — saving with an empty item list; the raw text is still kept in custom_notes/dishes for manual follow-up.`)
         }
@@ -1398,8 +1939,9 @@ export async function POST(req: NextRequest) {
           event_date: targetDate,
           pax: finalGuestCount,
           pax_detected: hasPaxDetected,
-          total_amount: calculatedTotal,
-          total_amount_detected: parsedTotal > 0,
+          total_amount: savedTotal,
+          plate_rate: savedQuote.pricePerPlate,
+          total_amount_source: 'server_quote',
           catering_contacts: {
             whatsapp_phone: targetPhone,
             customer_name: customerName || 'Valued Guest',
@@ -1421,6 +1963,8 @@ export async function POST(req: NextRequest) {
                 quantity: d.quantity
               }))
             }],
+            // Removed / added dishes on an indoor package (added ones carry the per-plate price used).
+            dish_changes: isIndoor ? indoorDishChanges : null,
             custom_notes: lastUserMsg.slice(0, 300),
             guest_count: finalGuestCount
           },
@@ -1437,13 +1981,37 @@ export async function POST(req: NextRequest) {
           } : null,
           requested_advance_amount: advanceAmountEarly > 0 ? advanceAmountEarly : null,
           customer_confirmed: isExplicitConfirmation,
+          // What the guest changed on the turn this row was last written
+          // (empty when nothing changed) — so the team can see revisions.
+          last_changes: bookingChanges,
+          last_updated_at: new Date().toISOString(),
           mandatory_details_present: mandatoryDetailsPresent,
         }
 
         // ── Everything is saved here, in sangam.quotes, as JSON. No writes ──
         // ── to eventmgmt happen until paymentCompleted flips true.        ──
         const sangamClient = sbSangam()
+        // The booking code only carries the phone's last 4 digits, so two
+        // different customers booking the same branch (or both outdoor) on
+        // the same day can derive the same code. The upsert below must never
+        // overwrite another customer's quote — same full phone means it's
+        // this customer's own booking (update it); a different phone means
+        // a code clash, which is skipped and logged for manual follow-up
+        // (the transcript is still kept in sangam.chat_sessions).
+        let bookingCodeClash = false
         if (sangamClient) {
+          const { data: existingQuote } = await sangamClient
+            .from('quotes')
+            .select('whatsapp_phone')
+            .eq('quote_number', quoteNumber)
+            .limit(1)
+          const existingPhone = existingQuote?.[0]?.whatsapp_phone as string | undefined
+          if (existingPhone && existingPhone.replace(/\D/g, '').slice(-10) !== targetPhone.replace(/\D/g, '').slice(-10)) {
+            bookingCodeClash = true
+            console.warn(`[Quote] Booking code ${quoteNumber} already belongs to another customer's quote — NOT overwriting it; needs manual follow-up for ${targetPhone}.`)
+          }
+        }
+        if (sangamClient && !bookingCodeClash) {
           const { error: quoteErr } = await sangamClient
             .from('quotes')
             .upsert({
@@ -1453,7 +2021,7 @@ export async function POST(req: NextRequest) {
               event_type: isIndoor ? 'Indoor Banquet Catering' : 'Outdoor Custom Catering',
               event_date: targetDate,
               dishes: matchedDishes.length > 0 ? matchedDishes.map(d => d.name).join(', ') : lastUserMsg.slice(0, 500),
-              total_amount: calculatedTotal,
+              total_amount: savedTotal,
               valid_until: validUntil,
               customer_name: customerName || null,
               address: targetAddress || null,
@@ -1466,6 +2034,22 @@ export async function POST(req: NextRequest) {
               // to flip to 'paid' first (see the gated block below).
               status: isExplicitConfirmation && mandatoryDetailsPresent ? 'confirmed_awaiting_payment' : 'active',
             }, { onConflict: 'quote_number' })
+          if (!quoteErr) quoteSaved = true
+
+          // The guest changed the date/branch/phone of a booking that was
+          // already saved, so it now has a new booking code (2026-10-24).
+          // The old row is kept (no deletes) but marked superseded so the
+          // team doesn't follow up on a stale quote. Scoped to this guest's
+          // own phone so it can never touch another customer's row.
+          if (!quoteErr && previousBookingCode && previousBookingCode !== quoteNumber) {
+            const { error: supErr } = await sangamClient
+              .from('quotes')
+              .update({ status: 'superseded' })
+              .eq('quote_number', previousBookingCode)
+              .ilike('whatsapp_phone', `%${(previousPhone || targetPhone).replace(/\D/g, '').slice(-10)}%`)
+              .neq('status', 'superseded')
+            if (supErr) console.warn(`[Quote] Marking ${previousBookingCode} superseded failed (non-fatal):`, supErr.message)
+          }
           if (quoteErr) console.warn('[Quote] sangam.quotes upsert failed (non-fatal):', quoteErr.message)
           else console.log(`[Quote] #${quoteNumber} saved to sangam.quotes (${isExplicitConfirmation && mandatoryDetailsPresent ? 'confirmed_awaiting_payment' : 'active'})`)
         }
@@ -1476,7 +2060,7 @@ export async function POST(req: NextRequest) {
         // ── one-line change, not a rewrite. Per the standing "no data ──
         // ── deletion" rule this never touches the sangam.quotes row   ──
         // ── except to flip its status once promoted.                 ──
-        if (paymentCompleted && isExplicitConfirmation && mandatoryDetailsPresent) {
+        if (paymentCompleted && !bookingCodeClash && isExplicitConfirmation && mandatoryDetailsPresent) {
           const client = sbEvent()
 
           if (client) {
@@ -1603,18 +2187,19 @@ export async function POST(req: NextRequest) {
     // whether a quote was ever saved (sangam.quotes only ever gets a row
     // once the customer has explicitly confirmed AND given a phone number;
     // this table is the only record of everything else -- browsing,
-    // questions, abandoned chats). Fire-and-forget: never let a logging
-    // failure affect the customer-facing reply.
-    void logChatSession(sessionIdForLog, allMsgs, reply, {
+    // questions, abandoned chats). Runs after the response (runAfterResponse):
+    // never let a logging failure or delay affect the customer-facing reply.
+    runAfterResponse(() => logChatSession(sessionIdForLog, allMsgs, reply, {
       language: responseLang,
       serviceType: isIndoor ? 'inhouse' : 'outdoor',
       phone: targetPhone || detectedPhone,
       branch: mentionedBranch || null,
-      // Same real, server-generated code shown to the guest this turn
-      // (see generatedQuoteCode) -- not re-parsed from the AI's own prose.
-      quoteNumber: generatedQuoteCode || null,
-      quoteSaved: !!(targetPhone && isExplicitConfirmation && mandatoryDetailsPresent),
-    })
+      // The real booking code for this conversation (see lib/booking-code.ts)
+      // -- not re-parsed from the AI's own prose. Null until date + phone
+      // (+ branch for indoor) are known.
+      quoteNumber: saveBookingCode || generatedQuoteCode || null,
+      quoteSaved,
+    }))
 
     return NextResponse.json({ reply, suggestions, customerName, loyaltyDiscount })
   } catch (err) {
@@ -1626,14 +2211,14 @@ export async function POST(req: NextRequest) {
     // there's nothing to log and this is a no-op (logChatSession also
     // no-ops on an empty sessionId).
     if (rawMsgsForLog.length > 0) {
-      void logChatSession(sessionIdForLog, rawMsgsForLog, errL.reply, {
+      runAfterResponse(() => logChatSession(sessionIdForLog, rawMsgsForLog, errL.reply, {
         language: responseLang,
         serviceType: 'unknown',
         phone: null,
         branch: null,
         quoteNumber: null,
         quoteSaved: false,
-      })
+      }))
     }
     return NextResponse.json({
       reply: errL.reply,
@@ -1696,6 +2281,15 @@ function deriveChipsFromReply(reply: string): Array<{ label: string; text: strin
   // Asking for dietary preference -- this exact phrase is unique to that
   // one question (SYSTEM_PROMPT step 5 / fb.indoorDietary).
   if (/dietary preference/i.test(reply)) {
+    // Outdoor wording keeps the word "outdoor" in the chip text so the
+    // conversation stays in the outdoor flow when a chip is tapped.
+    if (/outdoor/i.test(reply)) {
+      return [
+        { label: '🌿 Pure Veg', text: 'Pure Veg for the outdoor catering menu' },
+        { label: '🥗 Veg & Non-Veg', text: 'Veg and Non-Veg for the outdoor catering menu' },
+        { label: '🍗 Non-Veg', text: 'Non-Veg for the outdoor catering menu' },
+      ]
+    }
     return [
       { label: '🌿 Pure Veg', text: 'We prefer Pure Vegetarian menu packages' },
       { label: '🥗 Veg & Non-Veg', text: 'We prefer Veg and Non-Veg menu packages' },
@@ -1757,7 +2351,7 @@ function deriveChipsFromReply(reply: string): Array<{ label: string; text: strin
   if (/how many.*guests|guests?\s*\(pax\)/i.test(reply)) {
     if (/adults\s*\+\s*kids/i.test(reply)) {
       return [
-        { label: '👥 50 Guests', text: 'We are expecting approximately 50 guests (40 adults + 20 kids)' },
+        { label: '👥 50 Guests', text: 'We are expecting approximately 50 guests' },
         { label: '👥 100 Guests', text: 'We are expecting approximately 100 guests' },
         { label: '👥 150 Guests', text: 'We are expecting approximately 150 guests' },
         { label: '👥 200 Guests', text: 'We are expecting approximately 200 guests' },
@@ -1854,7 +2448,7 @@ function generateDynamicSuggestionsCore(
   // flags independently) could keep offering date-shortcut chips even
   // after the AI's own reply had already correctly moved past the date
   // question. Kept in sync with the main handler's pattern.
-  const hasDate = /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(allUserText)
+  const hasDate = extractExplicitEventDate(allUserText) !== null || /\b(\d{1,2}[-/.]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?|weekend|tomorrow|next week|next month|october|november|december|january|february|september|2026|2027)\b/i.test(allUserText)
   const hasSlot = allUserText.includes('lunch') || allUserText.includes('dinner') || allUserText.includes('full day') || (allUserText.includes('slot') && (allUserText.includes('slot 1') || allUserText.includes('slot 2') || allUserText.includes('slot 3') || allUserText.includes('slot1') || allUserText.includes('slot2') || allUserText.includes('lunch slot') || allUserText.includes('dinner slot')))
   // Bug fix (2026-09-29): the main handler's hasPaxDetected (above, in
   // the POST function) also falls back to a generic bare-number scan
@@ -1974,6 +2568,15 @@ function generateDynamicSuggestionsCore(
 
   // Case 1: Outdoor Catering Flow (Step-by-step: Occasion -> Date -> Time -> Pax -> Items -> Estimation)
   if (isOutdoorFlow) {
+    // 0. A menu suggestion was asked for but veg / non-veg isn't known yet.
+    if (wantsOutdoorSuggestion && extractCustomDishes(allUserText).length < 2 && !lastDietary) {
+      return [
+        { label: '🌿 Pure Veg', text: 'Pure Veg for the outdoor catering menu' },
+        { label: '🥗 Veg & Non-Veg', text: 'Veg and Non-Veg for the outdoor catering menu' },
+        { label: '🍗 Non-Veg', text: 'Non-Veg for the outdoor catering menu' },
+      ]
+    }
+
     // A. Estimation State: Main things needed (Pax and Items) are provided!
     if (hasPax && hasOutdoorItems) {
       return [
@@ -2095,7 +2698,7 @@ function generateDynamicSuggestionsCore(
   // Step 4: Guest Count / Pax Selection (Right after slot is selected!)
   if (!hasPax) {
     return [
-      { label: '👥 50 Guests', text: 'We are expecting approximately 50 guests (40 adults + 20 kids)' },
+      { label: '👥 50 Guests', text: 'We are expecting approximately 50 guests' },
       { label: '👥 100 Guests', text: 'We are expecting approximately 100 guests' },
       { label: '👥 150 Guests', text: 'We are expecting approximately 150 guests' },
       { label: '👥 200 Guests', text: 'We are expecting approximately 200 guests' },

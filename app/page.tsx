@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo, useCallback } from "react";
 import { sortBranchesByNearest } from "@/lib/sangam-branch-distance";
 import { getDynamicArjunGreeting } from "@/lib/greeting";
 import { translateSuggestionLabel } from "@/lib/suggestion-i18n";
@@ -403,6 +403,109 @@ function renderChatMessage(content: string, isUser = false, onEditSection?: (tit
   );
 }
 
+// Memoized so that typing in the input box doesn't re-run renderChatMessage()
+// (a split + per-line regex parse) for every past message in the conversation.
+const MessageBubble = memo(function MessageBubble({
+  content,
+  isUser,
+  onEditSection,
+}: {
+  content: string;
+  isUser: boolean;
+  onEditSection: (title: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-end" : "flex-start", gap: 6 }}>
+      <div
+        style={{
+          maxWidth: "84%",
+          background: isUser ? "#8a1f2b" : "#fff",
+          color: isUser ? "#fff" : "#3a352e",
+          border: isUser ? "none" : "1px solid #ece2d2",
+          borderRadius: isUser ? "15px 15px 5px 15px" : "15px 15px 15px 5px",
+          padding: "10px 14px",
+          font: "400 13.5px/1.55 'DM Sans'",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
+        }}
+      >
+        {renderChatMessage(content, isUser, onEditSection)}
+      </div>
+    </div>
+  );
+});
+
+// Self-contained input component: typing only re-renders this tiny input bar,
+// completely avoiding re-renders of the 2,000-line SangamHotels page tree.
+const ChatInputBar = memo(function ChatInputBar({
+  onSend,
+  loading,
+}: {
+  onSend: (text: string) => void;
+  loading: boolean;
+}) {
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSend = () => {
+    const trimmed = input.trim();
+    if (!trimmed || loading) return;
+    onSend(trimmed);
+    setInput("");
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderTop: "1px solid #ece2d2", background: "#fff" }}>
+      <input
+        ref={inputRef}
+        value={input}
+        disabled={loading}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
+        placeholder={loading ? "Arjun is replying..." : "Ask about menu, catering, rooms…"}
+        autoComplete="off"
+        style={{
+          flex: 1,
+          background: "#f3eee0",
+          border: "1.5px solid transparent",
+          outline: "none",
+          borderRadius: 22,
+          padding: "11px 16px",
+          font: "500 13px/1 'DM Sans'",
+          color: "#2a201b",
+          transition: "border-color 0.15s ease",
+        }}
+        onFocus={e => e.currentTarget.style.borderColor = "#c79a3a"}
+        onBlur={e => e.currentTarget.style.borderColor = "transparent"}
+      />
+      <button
+        type="button"
+        onClick={handleSend}
+        disabled={loading || !input.trim()}
+        title="Send message"
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: "50%",
+          background: loading || !input.trim() ? "#c9a0a8" : "#8a1f2b",
+          border: "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#fff",
+          font: "700 15px/1 'DM Sans'",
+          cursor: loading || !input.trim() ? "default" : "pointer",
+          flexShrink: 0,
+          transition: "background 0.15s ease, transform 0.1s ease",
+        }}
+        onMouseDown={e => { if (!loading && input.trim()) e.currentTarget.style.transform = "scale(0.95)"; }}
+        onMouseUp={e => e.currentTarget.style.transform = "scale(1)"}
+      >
+        ➤
+      </button>
+    </div>
+  );
+});
+
 export default function SangamHotels() {
   const [screen, setScreen] = useState<Screen>("home");
   const [chatOpen, setChatOpen] = useState(false);
@@ -423,7 +526,6 @@ export default function SangamHotels() {
       { role: 'assistant', content: getDynamicArjunGreeting() }
     ]);
   }, []);
-  const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatLang, setChatLang] = useState<'en' | 'te' | 'hi'>('en');
   const [langMenuOpen, setLangMenuOpen] = useState(false);
@@ -489,11 +591,10 @@ export default function SangamHotels() {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   async function sendChat(text?: string, displayText?: string) {
-    const msg = (text ?? chatInput).trim();
+    const msg = (text ?? '').trim();
     if (!msg || chatLoading) return;
     const next: ChatMsg[] = [...chatMessages, { role: 'user', content: msg, displayContent: displayText }];
     setChatMessages(next);
-    setChatInput('');
     setChatLoading(true);
     // Whatever quick-action chips were showing are now stale the moment a
     // message goes out (clicked, typed, or picked from the calendar) — clear
@@ -517,6 +618,17 @@ export default function SangamHotels() {
       setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
     }
   }
+
+  const sendChatRef = useRef<(text?: string, displayText?: string) => void>(() => {});
+  sendChatRef.current = sendChat;
+
+  const handleEditSection = useCallback((sectionTitle: string) => {
+    sendChatRef.current(`I would like to swap and customize dishes in the ${sectionTitle} section`);
+  }, []);
+
+  const handleSendInput = useCallback((text: string) => {
+    sendChatRef.current(text);
+  }, []);
 
   function handleChipClick(ct: { label: string; text: string; isCalendar?: boolean }) {
     if (ct.isCalendar || ct.label.toLowerCase().includes('calendar')) {
@@ -1743,23 +1855,12 @@ export default function SangamHotels() {
           {/* Messages */}
           <div style={{ padding:"14px 14px 10px", background:"#fbf6ec", display:"flex", flexDirection:"column", gap:12, height:350, overflowY:"auto" }}>
             {chatMessages.map((m, i) => (
-              <div key={i} style={{ display:"flex", flexDirection:"column", alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap:6 }}>
-                <div style={{
-                  maxWidth:"84%",
-                  background: m.role === 'user' ? "#8a1f2b" : "#fff",
-                  color: m.role === 'user' ? "#fff" : "#3a352e",
-                  border: m.role === 'user' ? "none" : "1px solid #ece2d2",
-                  borderRadius: m.role === 'user' ? "15px 15px 5px 15px" : "15px 15px 15px 5px",
-                  padding:"10px 14px",
-                  font:"400 13.5px/1.55 'DM Sans'",
-                  boxShadow:"0 2px 6px rgba(0,0,0,0.03)"
-                }}>
-                  {renderChatMessage(m.displayContent ?? m.content, m.role === 'user', (sectionTitle) => {
-                    sendChat(`I would like to swap and customize dishes in the ${sectionTitle} section`);
-                  })}
-                </div>
-
-              </div>
+              <MessageBubble
+                key={i}
+                content={m.displayContent ?? m.content}
+                isUser={m.role === 'user'}
+                onEditSection={handleEditSection}
+              />
             ))}
             {chatLoading && (
               <div style={{ alignSelf:"flex-start", background:"#fff", border:"1px solid #ece2d2", borderRadius:"15px 15px 15px 5px", padding:"10px 16px", font:"400 13px/1 'DM Sans'", color:"#9b8c78" }}>
@@ -1822,20 +1923,7 @@ export default function SangamHotels() {
           />
 
           {/* Input */}
-          <div style={{ display:"flex", alignItems:"center", gap:9, padding:"12px 14px", borderTop:"1px solid #ece2d2", background:"#fff" }}>
-            <input
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
-              placeholder="Ask about menu, catering, rooms…"
-              style={{ flex:1, background:"#f3eee0", border:"none", outline:"none", borderRadius:22, padding:"11px 16px", font:"500 13px/1 'DM Sans'", color:"#2a201b" }}
-            />
-            <button
-              onClick={() => sendChat()}
-              disabled={chatLoading || !chatInput.trim()}
-              style={{ width:38, height:38, borderRadius:"50%", background: chatLoading ? "#c9a0a8" : "#8a1f2b", border:"none", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", font:"700 15px/1 'DM Sans'", cursor: chatLoading ? "default" : "pointer", flexShrink:0 }}
-            >➤</button>
-          </div>
+          <ChatInputBar onSend={handleSendInput} loading={chatLoading} />
         </div>
       )}
 

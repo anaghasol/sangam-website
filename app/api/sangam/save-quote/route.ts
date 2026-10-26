@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getBranchIdByName } from '@/lib/sangam-catering'
+import { generateIndoorBookingCode, generateOutdoorBookingCode } from '@/lib/booking-code'
 
 // NOTE: nothing in app/page.tsx or app/embed/chat/page.tsx currently calls
 // this route — the chat's own [SAVE_QUOTE:...] handling in app/api/chat/route.ts
@@ -22,12 +23,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'WhatsApp phone is required' }, { status: 400 })
     }
 
-    // Generate unique quote / booking reference number (e.g. SGM-8942)
-    const quoteNumber = `SGM-${Math.floor(1000 + Math.random() * 9000)}`
     const validUntil = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString()
     const targetDate = eventDate && /^\d{4}-\d{2}-\d{2}$/.test(eventDate)
       ? eventDate
       : new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+    const resolvedServiceType = (serviceType || 'outdoor').toLowerCase().includes('inhouse') || (serviceType || '').toLowerCase().includes('indoor') ? 'inhouse' : 'outdoor'
+
+    // Booking code per the booking-code spec (lib/booking-code.ts) -- same
+    // generator as the chat route: e.g. PA05113210 (indoor) / OC17043210 (outdoor).
+    const quoteNumber = resolvedServiceType === 'inhouse'
+      ? generateIndoorBookingCode(String(branch || ''), targetDate, String(whatsappPhone))
+      : generateOutdoorBookingCode(targetDate, String(whatsappPhone))
 
     // Real branch_id looked up by name; falls back to the flagship UUID only
     // if no branch was given or the lookup fails (never silently drops the booking).
@@ -45,7 +51,7 @@ export async function POST(req: NextRequest) {
         .from('booking')
         .insert({
           branch_id: branchId,
-          service_type: (serviceType || 'outdoor').toLowerCase().includes('inhouse') || (serviceType || '').toLowerCase().includes('indoor') ? 'inhouse' : 'outdoor',
+          service_type: resolvedServiceType,
           event_date: targetDate,
           pax: guestCount || 50,
           status: 'draft',

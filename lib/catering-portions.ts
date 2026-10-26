@@ -30,6 +30,7 @@
  * instead of leaving the AI to guess it from prose.
  */
 import type { CateringLiveData, LiveMenu, LiveHall, StructuredMenuSection, DishCategory } from '@/lib/sangam-catering'
+import type { IndoorDishChanges } from '@/lib/indoor-dish-changes'
 
 export type GuestCountBreakdown = {
   adults: number
@@ -65,8 +66,8 @@ export type CateringQuoteEstimate = {
  * Calculates effective adult guest portions.
  */
 export function calculateEffectiveGuests(adults: number, kids = 0): GuestCountBreakdown {
-  const safeAdults = Math.max(0, Math.round(adults))
-  const safeKids = Math.max(0, Math.round(kids))
+  const safeAdults = Math.max(0, Math.round(Number.isFinite(adults) ? adults : 0))
+  const safeKids = Math.max(0, Math.round(Number.isFinite(kids) ? kids : 0))
   const effectiveAdults = Math.max(1, safeAdults + Math.ceil(safeKids / 2))
   return {
     adults: safeAdults,
@@ -244,7 +245,7 @@ export function extractDishesFromText(text: string, live?: CateringLiveData, def
 // has no real `persons_per_unit` on file — e.g. it only matched the static
 // fallback catalog, not a live `dish_pricing` row. Mirrors the industry
 // portion standards documented at the top of this file.
-const DEFAULT_PERSONS_PER_UNIT: Record<string, number> = {
+export const DEFAULT_PERSONS_PER_UNIT: Record<string, number> = {
   starter: 45, starters: 45,
   biryani: 28, biryanis: 28,
   curry: 38, curries: 38,
@@ -266,9 +267,38 @@ const DEFAULT_PERSONS_PER_UNIT: Record<string, number> = {
  * rather than guessing one — a wrong guessed year would make a booking
  * look available/unavailable for the wrong date entirely.
  */
-export function extractExplicitEventDate(text: string): string | null {
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+const WEEKDAY_RE = /\b(?:this|next|coming|upcoming|on)?\s*(sunday|monday|tuesday|wednesday|thursday|friday|saturday|mon|tues?|wed|thu(?:rs?)?|fri)\b/i
+
+/**
+ * "today", "tomorrow", "day after tomorrow", "next Monday", "this Saturday" →
+ * YYYY-MM-DD, counted from today in India time. A weekday always means its
+ * next occurrence AFTER today ("next Monday" said on a Monday is 7 days away).
+ */
+export function resolveRelativeDate(text: string, now: Date = new Date()): string | null {
+  const lower = text.toLowerCase()
+  // Today's calendar date in IST, independent of the server's timezone.
+  const ist = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 5.5 * 3600000)
+  const base = Date.UTC(ist.getFullYear(), ist.getMonth(), ist.getDate())
+  const iso = (offsetDays: number) => new Date(base + offsetDays * 86400000).toISOString().slice(0, 10)
+  if (/\bday after tomorrow\b/.test(lower)) return iso(2)
+  if (/\b(?:tomorrow|tmrw|tomorow)\b/.test(lower)) return iso(1)
+  if (/\btoday\b/.test(lower)) return iso(0)
+  const m = lower.match(WEEKDAY_RE)
+  if (m) {
+    const target = WEEKDAYS.findIndex(d => d.startsWith(m[1].slice(0, 3)))
+    if (target >= 0) {
+      const days = ((target - ist.getDay() + 7) % 7) || 7
+      return iso(days)
+    }
+  }
+  return null
+}
+
+export function extractExplicitEventDate(text: string, now: Date = new Date()): string | null {
   const dateMatch = text.match(/(\d{1,2})\s*(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{4})/i)
-  if (!dateMatch) return null
+  // No written-out date: fall back to "tomorrow" / "next Monday" style dates.
+  if (!dateMatch) return resolveRelativeDate(text, now)
   const months: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' }
   const day = dateMatch[1].padStart(2, '0')
   const m = months[dateMatch[2].toLowerCase().slice(0, 3)]
@@ -301,14 +331,17 @@ export function extractExplicitEventDate(text: string): string | null {
 //    event_date) is now excluded from the pool before picking, so an
 //    already-booked hall is skipped in favor of the next best fit rather
 //    than being recommended or saved as if it were free.
+// 3. (2026-10-23) With no branch_id at all this still searched every
+//    branch's halls. Halls are now strictly branch-scoped: no resolved
+//    branch means no hall is picked.
 export function pickHallForGuestCount(
   halls: LiveHall[],
   branchId: string | null,
   guestCount: number,
   bookedHallIds?: Set<string>
 ): LiveHall | null {
-  if (!halls || halls.length === 0) return null
-  const pool = (branchId ? halls.filter(h => h.branchId === branchId) : halls)
+  if (!halls || halls.length === 0 || !branchId) return null
+  const pool = halls.filter(h => h.branchId === branchId)
     .filter(h => !bookedHallIds || !bookedHallIds.has(h.id))
   if (pool.length === 0) return null
   const fits = pool.filter(h => (h.maxPax == null || guestCount <= h.maxPax) && (h.minPax == null || guestCount >= h.minPax))
@@ -406,7 +439,14 @@ export function generatePopularCateringQuote(
    * `sec.dishes`, and silently ignores a name that isn't actually in that
    * section's real catalog rather than inventing a dish.
    */
-  sectionOverrides?: Record<string, string[]>
+  sectionOverrides?: Record<string, string[]>,
+  /**
+   * Indoor only (lib/indoor-dish-changes.ts): dishes the guest removed from
+   * the package, and dishes they added that aren't part of it. Removed dishes
+   * drop out of the spread (the package rate is unchanged); added dishes are
+   * listed and their per-plate price is added to the plate rate.
+   */
+  dishChanges?: IndoorDishChanges
 ): {
   headline: string
   menuItems: string[]
@@ -426,6 +466,9 @@ export function generatePopularCateringQuote(
   hallFreeThreshold: number | null
   /** The real per-menu sections actually used (real DB breakdown only) — empty when this menu has no structured breakdown or this isn't an indoor real-data quote. Lets a caller detect/build dish-edit flows without re-querying. */
   sections: StructuredMenuSection[]
+  /** Indoor only: the real eventmgmt.menu row this quote was priced from (null when no live menu matched), and the package name shown. */
+  menuId?: string | null
+  packageName?: string
 } {
   const customDishes = userMessageText ? extractCustomDishes(userMessageText) : []
   // Bug fix (2026-10-06): this used to gate the whole custom-menu path on
@@ -448,7 +491,11 @@ export function generatePopularCateringQuote(
   // work out how many trays/units that dish needs for this guest count
   // (using its own real `persons_per_unit` when on file, else the standard
   // portion default), and sum real line costs instead of a guessed rate.
-  if (hasCustomMenu) {
+  // Outdoor/custom only (2026-10-24): an indoor banquet quote is always
+  // priced from its package — an indoor guest naming two dishes (e.g. two
+  // dish swaps) used to silently turn the banquet estimate into an outdoor
+  // custom-tray quote.
+  if (hasCustomMenu && serviceType !== 'inhouse') {
     const matchedDishes = liveMatchedDishes
     let hasNonVeg = false
     let pricedSubtotal = 0
@@ -579,62 +626,53 @@ export function generatePopularCateringQuote(
       // other diet on file, fall back to the full pool rather than showing nothing.
       const dietFiltered = live.indoorMenus.filter(m => wantsNonVeg ? !isVegMenuRow(m) : isVegMenuRow(m))
       const pool = dietFiltered.length > 0 ? dietFiltered : live.indoorMenus
-      liveMenu = pool.reduce<LiveMenu | undefined>((best, m) =>
+      // A real menu named outright in the text ("Grand Non Veg Menu") wins
+      // over the price heuristic (2026-10-24) — longest name first, so
+      // "Grand Non Veg Menu" beats a plain "Non Veg Menu" inside it.
+      const named = [...live.indoorMenus]
+        .filter(m => m.name && textLower.replace(/-/g, ' ').includes(m.name.toLowerCase().replace(/-/g, ' ')))
+        .sort((a, b) => b.name.length - a.name.length)[0]
+      liveMenu = named ?? pool.reduce<LiveMenu | undefined>((best, m) =>
         !best || Math.abs(m.pricePerPax - targetPrice) < Math.abs(best.pricePerPax - targetPrice) ? m : best, undefined)
     }
 
     const usedLivePrice = !!liveMenu
-    const platePrice = liveMenu ? liveMenu.pricePerPax : targetPrice
+    const basePlatePrice = liveMenu ? liveMenu.pricePerPax : targetPrice
+    const addedPerPlate = (dishChanges?.added ?? []).reduce((s, a) => s + a.perPlate, 0)
+    // Added dishes ride on top of the package rate, so the "₹X/plate × guests"
+    // arithmetic shown to the guest still equals the total.
+    const platePrice = basePlatePrice + addedPerPlate
     if (liveMenu) packageName = liveMenu.name
 
     const subtotal = platePrice * guestCount
 
-    // Step 3: hall recommendation — prefer a real eventmgmt.hall row that (a)
-    // belongs to the selected branch and (b) actually fits this guest count.
-    // Only guess a hall name if the table has no rows at all.
-    let hallName = 'Maduram AC Banquet Hall'
-    let hallCap = '50–100 pax'
-    let usedLiveHall = false
-    let usedBranchMatchedHall = false
-    let hallFeeStatus: 'waived' | 'not_waived' | 'unknown' = 'waived'
+    // Step 3: hall recommendation — STRICTLY from the selected branch's own
+    // real eventmgmt.hall rows (2026-10-23). This used to fall back to every
+    // hall across all branches whenever the branch had no halls on file (or
+    // no branch_id was resolved), and to hardcoded hall names when the hall
+    // table was unreachable — both of which showed guests halls from a
+    // different branch than the one they picked. No branch hall on file now
+    // means no hall is named at all; the catering manager finalizes it.
+    let hallName: string | null = null
+    let hallCap = ''
+    let hallFeeStatus: 'waived' | 'not_waived' | 'unknown' = 'unknown'
     let hallFreeThreshold: number | null = null
 
-    if (live?.halls && live.halls.length > 0) {
-      // Restrict to this branch's halls, but only if that actually leaves
-      // something to choose from — a hall with no branch_id set, or a branch
-      // that has no halls on file yet, shouldn't make the quote come up empty.
-      const branchHalls = branchId ? live.halls.filter(h => h.branchId === branchId) : []
-      const hallPool = branchHalls.length > 0 ? branchHalls : live.halls
-      // "Active" halls: the live fetch already excludes is_blocked = true rows,
-      // so every hall in `live.halls` is already active/bookable.
-      const fits = hallPool.filter(h => (h.maxPax == null || guestCount <= h.maxPax) && (h.minPax == null || guestCount >= h.minPax))
-      const chosen: LiveHall = fits.length > 0
-        ? fits.reduce((best, h) => (h.maxPax ?? Infinity) < (best.maxPax ?? Infinity) ? h : best)
-        : hallPool.reduce((best, h) => (h.maxPax ?? 0) > (best.maxPax ?? 0) ? h : best)
+    // "Active" halls: the live fetch already excludes is_blocked = true rows.
+    const chosen = live?.halls ? pickHallForGuestCount(live.halls, branchId ?? null, guestCount) : null
+    const usedBranchMatchedHall = !!chosen
+    if (chosen) {
       hallName = chosen.name
       hallCap = chosen.minPax && chosen.maxPax ? `${chosen.minPax}–${chosen.maxPax} pax` : (chosen.maxPax ? `up to ${chosen.maxPax} pax` : (chosen.capacity ? `${chosen.capacity} pax` : 'capacity on request'))
-      usedLiveHall = true
-      usedBranchMatchedHall = branchHalls.length > 0
       hallFreeThreshold = chosen.minCateringValueForFree ?? null
       hallFeeStatus = chosen.minCateringValueForFree == null
         ? 'unknown'
         : (subtotal >= chosen.minCateringValueForFree ? 'waived' : 'not_waived')
-    } else {
-      if (guestCount > 220) {
-        hallName = 'Sangamam Grand Banquet Hall (4th Floor)'
-        hallCap = '250–500 pax'
-      } else if (guestCount > 120) {
-        hallName = 'Classic Hall (Ground Floor) / Arangam Hall'
-        hallCap = '100–220 pax'
-      } else if (guestCount >= 80) {
-        hallName = 'Arangam / Magudam AC Banquet Hall (3rd Floor)'
-        hallCap = '100–150 pax'
-      }
-      hallFeeStatus = 'unknown'
     }
 
     let menuItems: string[] = []
     let usedRealMenuBreakdown = false
+    const removedSet = new Set((dishChanges?.removed ?? []).map(n => n.toLowerCase()))
 
     // Real data path: build the itemized list from the actual menu builder
     // tables (menu -> menu_categories -> menu_sections -> section_dish ->
@@ -683,13 +721,16 @@ export function generatePopularCateringQuote(
                 .filter((d): d is (typeof sec.dishes)[number] => !!d)
             : []
           const shownDishes = overrideDishes.length > 0 ? overrideDishes.slice(0, showCount) : sec.dishes.slice(0, showCount)
-          const dishNames = shownDishes.map(d => {
+          const keptDishes = shownDishes.filter(d => !removedSet.has(d.name.toLowerCase()))
+          // Every dish in the section was removed: leave the section out.
+          if (keptDishes.length === 0 && shownDishes.length > 0) return null
+          const dishNames = keptDishes.map(d => {
             const extra = d.extraPrice ? ` (+₹${d.extraPrice})` : ''
             return `${d.name}${extra}`
           }).join(', ')
           return `**${sec.sectionName}**${addonNote}${complimentaryNote}\n• ${dishNames}`
-        })
-        menuItems.push(`### ${icon} ${catName}\n${sectionBlocks.join('\n')}`)
+        }).filter((b): b is string => !!b)
+        if (sectionBlocks.length > 0) menuItems.push(`### ${icon} ${catName}\n${sectionBlocks.join('\n')}`)
       }
     }
 
@@ -750,15 +791,24 @@ export function generatePopularCateringQuote(
       ]
     }
 
+    // Guest-requested changes to the package, shown right under the spread.
+    if (dishChanges && dishChanges.removed.length > 0) {
+      menuItems.push(`### ➖ Removed Dishes\n• ${dishChanges.removed.join(', ')} (package rate unchanged)`)
+    }
+    if (dishChanges && dishChanges.added.length > 0) {
+      const lines = dishChanges.added.map(a => `• ${a.name} — +₹${a.perPlate}/plate${a.source === 'standard-rate' ? ' *(standard add-on rate — final price to be confirmed by our catering manager)*' : ''}`)
+      menuItems.push(`### ➕ Added Dishes\n${lines.join('\n')}`)
+    }
+
     const hallFeeLine = hallFeeStatus === 'waived'
       ? `• Hall Fee Status: **Complimentary / Waived**${hallFreeThreshold ? ` (catering total ≥ ₹${hallFreeThreshold.toLocaleString('en-IN')})` : ''}`
       : hallFeeStatus === 'not_waived'
         ? `• Hall Fee Status: **Hall charge applies**${hallFreeThreshold ? ` (waived once catering total reaches ₹${hallFreeThreshold.toLocaleString('en-IN')} — you're ₹${(hallFreeThreshold - subtotal).toLocaleString('en-IN')} away)` : ''}`
         : '• Hall Fee Status: Confirmed with our catering manager based on your final package'
 
-    const venueNote = !usedLiveHall
-      ? ' *(estimated — confirm availability)*'
-      : (branchId && !usedBranchMatchedHall ? ' *(no hall on file for this branch yet — confirm with our catering manager)*' : '')
+    const venueLine = hallName
+      ? `• Recommended Venue: **${hallName}** (Capacity: ${hallCap})`
+      : `• Venue: our catering manager will finalize the hall at **${branch || 'your chosen branch'}** with you`
 
     return {
       // Bug fix (2026-09-28): this used to fall back to the literal string
@@ -775,9 +825,10 @@ export function generatePopularCateringQuote(
       headline: `🏛️ **Indoor AC Banquet Hall Estimation (${branch || 'branch to be confirmed'})**${usedLivePrice ? '' : ' *(estimated pricing — please confirm with our catering manager)*'}`,
       menuItems: liveMenu?.description ? [...menuItems, `### 📝 Package Notes\n• ${liveMenu.description}`] : menuItems,
       trayBreakdown: [
-        `• Selected Package: **${packageName} (₹${platePrice}/plate)**`,
+        `• Selected Package: **${packageName} (₹${basePlatePrice}/plate)**`,
+        ...(addedPerPlate > 0 ? [`• Added Dishes: **+₹${addedPerPlate}/plate** → ₹${platePrice}/plate in total`] : []),
         `• Guest Count: **${guestCount} Pax**`,
-        `• Recommended Venue: **${hallName}** (Capacity: ${hallCap})${venueNote}`,
+        venueLine,
         `• Banquet Amenities: **AC Hall, Stage, AV Sound & Microphones, Dedicated Banquet Servers**`,
         hallFeeLine
       ],
@@ -789,7 +840,9 @@ export function generatePopularCateringQuote(
       usedRealMenuBreakdown,
       hallFeeStatus,
       hallFreeThreshold,
-      sections: realSections || []
+      sections: realSections || [],
+      menuId: liveMenu?.id ?? null,
+      packageName,
     }
   }
 

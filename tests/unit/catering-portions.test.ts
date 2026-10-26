@@ -83,7 +83,8 @@ describe('Catering Portions & Math Engine', () => {
     assert.equal(extractExplicitEventDate('We need catering on 25th Dec 2026 for dinner'), '2026-12-25')
     assert.equal(extractExplicitEventDate('Event is on 5 January 2027'), '2027-01-05')
     assert.equal(extractExplicitEventDate('Book for 15 Aug 2026 lunch'), '2026-08-15')
-    assert.equal(extractExplicitEventDate('Tomorrow lunch'), null, 'Must return null without 4-digit year to avoid guessing')
+    assert.equal(extractExplicitEventDate('25 Dec lunch'), null, 'Must return null without 4-digit year to avoid guessing')
+    assert.equal(extractExplicitEventDate('Tomorrow lunch', new Date('2026-10-26T04:30:00Z')), '2026-10-27', 'relative dates are resolved from today')
   })
 
   test('pickHallForGuestCount: respects capacity, branch scoping, and booked hall exclusion', () => {
@@ -130,5 +131,30 @@ describe('Catering Portions & Math Engine', () => {
     assert.ok(rules.includes('Biryani / Pulao: 1 Full Tray (≈5 kg) feeds 25–30 guests'))
     assert.ok(rules.includes('Starters / Appetizers: 1 Full Tray (≈100–120 pcs) feeds 40–50 guests'))
     assert.ok(rules.includes('maximum 5% loyalty discount'))
+  })
+})
+
+describe('Relative event dates (2026-10-26)', async () => {
+  const { resolveRelativeDate, extractExplicitEventDate } = await import('@/lib/catering-portions')
+  // Monday 26 Oct 2026, 10:00 IST
+  const MON = new Date('2026-10-26T04:30:00Z')
+  test('weekday names mean the next occurrence after today', () => {
+    assert.equal(resolveRelativeDate('date will be on next monday dinner', MON), '2026-11-02')
+    assert.equal(resolveRelativeDate('this Saturday please', MON), '2026-10-31')
+    assert.equal(resolveRelativeDate('on friday', MON), '2026-10-30')
+    assert.equal(resolveRelativeDate('Sunday lunch', MON), '2026-11-01')
+  })
+  test('tomorrow / day after tomorrow / today', () => {
+    assert.equal(resolveRelativeDate('tomorrow dinner', MON), '2026-10-27')
+    assert.equal(resolveRelativeDate('day after tomorrow', MON), '2026-10-28')
+    assert.equal(resolveRelativeDate('today', MON), '2026-10-26')
+  })
+  test('uses India time near midnight UTC', () => {
+    // 23:00 UTC on Mon is already Tue 04:30 IST → "tomorrow" is Wednesday.
+    assert.equal(resolveRelativeDate('tomorrow', new Date('2026-10-26T23:00:00Z')), '2026-10-28')
+  })
+  test('words that only contain a weekday abbreviation do not count; explicit dates win', () => {
+    for (const t of ['a wedding for 200', 'satisfied with the menu', 'next month', 'we sat down']) assert.equal(resolveRelativeDate(t, MON), null, t)
+    assert.equal(extractExplicitEventDate('Saturday 12 Dec 2026', MON), '2026-12-12')
   })
 })

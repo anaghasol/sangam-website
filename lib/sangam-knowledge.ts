@@ -112,13 +112,41 @@ export async function searchSangamKnowledgeChunks(userQuery: string, limit = 3):
 }
 
 /**
+ * Knowledge-base chunks that describe an OUTDOOR menu, full text (not
+ * truncated like the prompt chunks — they are parsed for "Starters: A, B, C"
+ * lines by lib/outdoor-menu.ts). Chunks that also mention the event come
+ * first. Returns [] when nothing is on file.
+ */
+export async function searchOutdoorMenuKnowledge(occasion: string | null): Promise<string[]> {
+  const client = sbSangam()
+  if (!client) return []
+  try {
+    const { data } = await client
+      .from('knowledge_chunks')
+      .select('content, category')
+      .eq('active', true)
+      .ilike('content', '%outdoor%')
+      .limit(30)
+    const rows = (data || []) as Array<{ content: string; category: string | null }>
+    const o = (occasion || '').toLowerCase()
+    return rows
+      .map(r => r.content)
+      .filter(Boolean)
+      .sort((a, b) => Number(!!o && b.toLowerCase().includes(o)) - Number(!!o && a.toLowerCase().includes(o)))
+  } catch (e) {
+    console.warn('Error querying outdoor menu knowledge:', e)
+    return []
+  }
+}
+
+/**
  * Unifies all knowledge layers for the Chat AI assistant (Arjun):
  * - Vector Knowledge Chunks (`sangam.knowledge_chunks`)
  * - Real PetPooja Sales Facts (`sangam_popular_items`)
  * - Banquet Halls & Catering DB (`eventmgmt` schema)
  * - Portion Math & Tray Capacity Rules
  */
-export async function getSangamUnifiedKnowledgeContext(userQuery: string, branchId?: string | null): Promise<string> {
+export async function getSangamUnifiedKnowledgeContext(userQuery: string, branchId?: string | null, focus?: 'outdoor'): Promise<string> {
   const [vectorChunks, salesContext, cateringContext] = await Promise.all([
     searchSangamKnowledgeChunks(userQuery),
     getSangamSalesContext(),
@@ -126,7 +154,7 @@ export async function getSangamUnifiedKnowledgeContext(userQuery: string, branch
     // already known in this conversation, so this block doesn't hand the
     // AI an unscoped, org-wide hall list that contradicts route.ts's own
     // branch-filtered `branchHallContext` block in the same prompt.
-    getSangamCateringChatContext(branchId)
+    getSangamCateringChatContext(branchId, focus)
   ])
 
   const portionRules = getCateringPortionRulesText()

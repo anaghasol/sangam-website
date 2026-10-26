@@ -26,7 +26,7 @@ export async function GET() {
     const { data, error } = await ev
       .from('booking')
       .select('id, booking_code, service_type, status, created_at')
-      .ilike('booking_code', 'SGM-%')
+      .contains('catering_contacts', { source: 'ai_chatbot' })
       .order('created_at', { ascending: false })
       .limit(20)
     out.eventmgmt_booking = { count: data?.length ?? 0, error: error?.message, rows: data }

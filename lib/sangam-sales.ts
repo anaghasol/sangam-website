@@ -68,6 +68,32 @@ const isVeg = (r: Row): boolean => {
 }
 
 /**
+ * Best-selling dish names (food only, no tea/water/biscuits), best first —
+ * the "trending items" tier of an outdoor menu suggestion. Veg-only when
+ * asked. Returns [] if the sales data is unavailable.
+ */
+export async function getTrendingDishNames(vegOnly: boolean, n = 40): Promise<string[]> {
+  const client = sb()
+  if (!client) return []
+  try {
+    const { data, error } = await client
+      .from('sangam_popular_items')
+      .select('display_name,category,incidental,lane,daypart,qty,typical_price')
+      .order('qty', { ascending: false })
+      .limit(1000)
+    if (error || !data?.length) return []
+    const qty = new Map<string, number>()
+    for (const r of data as Row[]) {
+      if (r.incidental || (vegOnly && !isVeg(r))) continue
+      qty.set(r.display_name, (qty.get(r.display_name) || 0) + (Number(r.qty) || 0))
+    }
+    return [...qty.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([name]) => name)
+  } catch {
+    return []
+  }
+}
+
+/**
  * A short block of real sales facts for the system prompt, or '' if unavailable.
  *
  * Returns '' rather than throwing or inventing: the chat must degrade to its

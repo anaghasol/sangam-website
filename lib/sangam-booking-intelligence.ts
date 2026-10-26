@@ -186,7 +186,9 @@ export async function getIndoorBookingIntelligence(opts: {
 
   const parts: string[] = []
   if (similar.count > 0) {
-    const hallsNote = similar.sampleHalls.length > 0 ? ` (commonly booked halls: ${similar.sampleHalls.join(', ')})` : ''
+    // Only name halls when the history is scoped to the guest's own branch —
+    // an unscoped query would surface halls from other branches (2026-10-23).
+    const hallsNote = opts.branchId && similar.sampleHalls.length > 0 ? ` (commonly booked halls: ${similar.sampleHalls.join(', ')})` : ''
     parts.push(
       `\nSIMILAR PAST INDOOR BOOKINGS (real completed events, ~${opts.pax} guest range, reference only — the quoted plate rate must still come from the live menu pricing above, not from this history):` +
       `\n• ${similar.count} similar real booking(s) on file` +
@@ -217,7 +219,7 @@ export async function getIndoorBookingIntelligence(opts: {
  * for a corporate lunch aren't the same thing), and returns the most
  * frequently chosen ones. Read-only, like the rest of this module.
  */
-async function getPopularOutdoorDishNames(occasionId: string | null, limit = 8): Promise<Array<{ name: string; count: number }>> {
+export async function getPopularOutdoorDishNames(occasionId: string | null, limit = 8): Promise<Array<{ name: string; count: number }>> {
   const client = sbEvent()
   if (!client) return []
   try {

@@ -144,10 +144,92 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
+// Self-contained input component: typing only re-renders this tiny input bar,
+// completely avoiding re-renders of the EmbedChatPage component tree.
+const ChatInputBar = memo(function ChatInputBar({
+  onSend,
+  loading,
+}: {
+  onSend: (text: string) => void;
+  loading: boolean;
+}) {
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSend = () => {
+    const trimmed = input.trim();
+    if (!trimmed || loading) return;
+    onSend(trimmed);
+    setInput("");
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "14px 16px",
+        borderTop: "1px solid #ece2d2",
+        background: "#fff",
+      }}
+    >
+      <input
+        ref={inputRef}
+        value={input}
+        disabled={loading}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+        placeholder={loading ? "Arjun is replying..." : "Ask for catering quote, customize dishes, or save..."}
+        autoComplete="off"
+        style={{
+          flex: 1,
+          background: "#f3eee0",
+          border: "1.5px solid transparent",
+          outline: "none",
+          borderRadius: 24,
+          padding: "12px 18px",
+          font: "500 14px/1 'DM Sans'",
+          color: "#2a201b",
+          transition: "border-color 0.15s ease",
+        }}
+        onFocus={(e) => (e.currentTarget.style.borderColor = "#c79a3a")}
+        onBlur={(e) => (e.currentTarget.style.borderColor = "transparent")}
+      />
+      <button
+        type="button"
+        onClick={handleSend}
+        disabled={loading || !input.trim()}
+        title="Send message"
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: "50%",
+          background: loading || !input.trim() ? "#c9a0a8" : "#8a1f2b",
+          border: "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#fff",
+          font: "700 16px/1 'DM Sans'",
+          cursor: loading || !input.trim() ? "default" : "pointer",
+          flexShrink: 0,
+          transition: "background 0.15s ease, transform 0.1s ease",
+        }}
+        onMouseDown={(e) => {
+          if (!loading && input.trim()) e.currentTarget.style.transform = "scale(0.95)";
+        }}
+        onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+      >
+        ➤
+      </button>
+    </div>
+  );
+});
+
 export default function EmbedChatPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [suggestions, setSuggestions] = useState<Array<{ label: string; text: string }>>(INITIAL_SUGGESTIONS);
-  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [lang, setLang] = useState<'en' | 'te' | 'hi'>('en');
   const [langMenuOpen, setLangMenuOpen] = useState(false);
@@ -188,12 +270,11 @@ export default function EmbedChatPage() {
   }, [messages, loading]);
 
   async function sendChat(text?: string, displayText?: string) {
-    const msg = (text ?? input).trim();
+    const msg = (text ?? "").trim();
     if (!msg || loading) return;
 
     const next: ChatMsg[] = [...messages, { role: "user", content: msg, displayContent: displayText }];
     setMessages(next);
-    setInput("");
     setLoading(true);
     // Whatever quick-action chips were showing are now stale the moment a
     // message goes out — clear them so nothing lingers through the loading
@@ -230,6 +311,10 @@ export default function EmbedChatPage() {
   // busted just because EmbedChatPage re-rendered (e.g. from a keystroke).
   const handleEditSection = useCallback((sectionTitle: string) => {
     sendChatRef.current(`I would like to swap and customize dishes in the ${sectionTitle} section`);
+  }, []);
+
+  const handleSendInput = useCallback((text: string) => {
+    sendChatRef.current(text);
   }, []);
 
   function handleChipClick(ct: { label: string; text: string; isCalendar?: boolean }) {
@@ -473,53 +558,7 @@ export default function EmbedChatPage() {
       />
 
       {/* Input */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "14px 16px",
-          borderTop: "1px solid #ece2d2",
-          background: "#fff",
-        }}
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendChat()}
-          placeholder="Ask for catering quote, customize dishes, or save..."
-          style={{
-            flex: 1,
-            background: "#f3eee0",
-            border: "none",
-            outline: "none",
-            borderRadius: 24,
-            padding: "12px 18px",
-            font: "500 14px/1 'DM Sans'",
-            color: "#2a201b",
-          }}
-        />
-        <button
-          onClick={() => sendChat()}
-          disabled={loading || !input.trim()}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: "50%",
-            background: loading ? "#c9a0a8" : "#8a1f2b",
-            border: "none",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#fff",
-            font: "700 16px/1 'DM Sans'",
-            cursor: loading ? "default" : "pointer",
-            flexShrink: 0,
-          }}
-        >
-          ➤
-        </button>
-      </div>
+      <ChatInputBar onSend={handleSendInput} loading={loading} />
     </div>
   );
 }

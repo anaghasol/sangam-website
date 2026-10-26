@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { extractAddress, extractCustomerName } from '@/app/api/chat/route'
+import { extractAddress, extractCustomerName, isBookingConfirmation } from '@/app/api/chat/route'
 import { generatePopularCateringQuote } from '@/lib/catering-portions'
 
 describe('Indoor & Outdoor Catering End-to-End Chat Flows', () => {
@@ -97,6 +97,40 @@ describe('Indoor & Outdoor Catering End-to-End Chat Flows', () => {
       assert.equal(extractCustomerName('this is Kishore Reddy speaking'), 'Kishore Reddy')
       assert.equal(extractCustomerName('I am Vikram Rao'), 'Vikram Rao')
       assert.equal(extractCustomerName('Just checking the menu prices'), null)
+      // Regressions (2026-10-23): ordinary sentences are not names, and
+      // the next detail in the message doesn't run into the name.
+      assert.equal(extractCustomerName('I am looking for a banquet hall'), null)
+      assert.equal(extractCustomerName("I'm planning a wedding"), null)
+      assert.equal(extractCustomerName('this is for 100 guests'), null)
+      assert.equal(extractCustomerName('my name is ravi kumar'), 'Ravi Kumar')
+      assert.equal(extractCustomerName('confirm. My name is Ravi Kumar, delivery address is Plot 12'), 'Ravi Kumar')
+      assert.equal(extractCustomerName('My name is Ravi Kumar delivery address is Plot 12'), 'Ravi Kumar')
+    })
+
+    test('isBookingConfirmation: "save the quote" counts; hall-capacity chips do not (2026-10-23)', () => {
+      // Real outdoor guest wording that used to be ignored (quote never saved).
+      assert.ok(isBookingConfirmation('save the quote and this was my details like 9876541695'))
+      assert.ok(isBookingConfirmation('I would like to save this quote for 10 days. My WhatsApp number is 9876543210'))
+      assert.ok(isBookingConfirmation('confirm the order'))
+      assert.ok(isBookingConfirmation('yes go ahead'))
+      assert.ok(isBookingConfirmation('please book this'))
+      // Browsing / seating answers are not a booking confirmation.
+      assert.equal(isBookingConfirmation('Yes, please proceed with Sangamam Hall for 250 guests'), false)
+      assert.equal(isBookingConfirmation('I need all 400 guests — please proceed and have the catering manager confirm the seating arrangement'), false)
+      assert.equal(isBookingConfirmation('how much is the quote for 100 guests'), false)
+      assert.equal(isBookingConfirmation('can I book a hall for my wedding'), false)
+    })
+
+    test('Delivery address extraction stops at phone/name details (2026-10-23)', () => {
+      assert.equal(
+        extractAddress('delivery address is Plot 12, Road 3, Hayathnagar 501505, phone 9876543210'),
+        'Plot 12, Road 3, Hayathnagar 501505'
+      )
+      assert.equal(
+        extractAddress('Plot 12, Road 3, Hayathnagar 501505 9876543210'),
+        'Plot 12, Road 3, Hayathnagar 501505'
+      )
+      assert.equal(extractAddress('We need it delivered to Green Park Farmhouse, Shamshabad'), 'Green Park Farmhouse, Shamshabad')
     })
 
     test('Quote generation for Outdoor: includes live setup, tray capacities, and 10-day validity', () => {
@@ -183,8 +217,9 @@ describe('Indoor & Outdoor Catering End-to-End Chat Flows', () => {
         'Quote must be marked confirmed_awaiting_payment when confirmed with all details'
       )
       assert.ok(
-        routeContent.includes("quoteSaved: !!(targetPhone && isExplicitConfirmation && mandatoryDetailsPresent)"),
-        'quoteSaved telemetry flag is true only when phone, confirmation, and mandatory details exist'
+        routeContent.includes("if (targetPhone && saveBookingCode && bookingEventDate && isExplicitConfirmation && mandatoryDetailsPresent")
+          && routeContent.includes("if (!quoteErr) quoteSaved = true"),
+        'quoteSaved telemetry flag is true only when phone, booking code, confirmation, and mandatory details exist AND the save succeeded'
       )
       assert.ok(
         routeContent.includes("quote_number: quoteNumber"),
