@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, memo, useCallback } from "react";
 import { sortBranchesByNearest } from "@/lib/sangam-branch-distance";
 import { getDynamicArjunGreeting } from "@/lib/greeting";
+import { VoiceMicButton } from "@/app/components/VoiceMicButton";
+import { translateToEnglish } from "@/lib/voice";
 import { translateSuggestionLabel } from "@/lib/suggestion-i18n";
 import { getOrCreateChatSessionId } from "@/lib/chat-session";
 
@@ -439,12 +441,28 @@ const MessageBubble = memo(function MessageBubble({
 const ChatInputBar = memo(function ChatInputBar({
   onSend,
   loading,
+  lang,
 }: {
-  onSend: (text: string) => void;
+  onSend: (text: string, displayText?: string) => void;
   loading: boolean;
+  lang: 'en' | 'te' | 'hi';
 }) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Voice: the words stream into the box while the guest speaks; when they
+  // stop, the text goes out like a typed message. Telugu / Hindi is
+  // translated to English first (the booking logic reads English), while
+  // the chat bubble keeps showing what the guest actually said.
+  const [translating, setTranslating] = useState(false);
+  const sendSpoken = async (spoken: string) => {
+    if (loading) { setInput(spoken); return; }
+    setTranslating(true);
+    const english = await translateToEnglish(spoken);
+    setTranslating(false);
+    setInput("");
+    onSend(english, english !== spoken ? spoken : undefined);
+  };
 
   const handleSend = () => {
     const trimmed = input.trim();
@@ -454,14 +472,14 @@ const ChatInputBar = memo(function ChatInputBar({
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderTop: "1px solid #ece2d2", background: "#fff" }}>
+    <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderTop: "1px solid #ece2d2", background: "#fff" }}>
       <input
         ref={inputRef}
         value={input}
-        disabled={loading}
+        disabled={loading || translating}
         onChange={e => setInput(e.target.value)}
         onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-        placeholder={loading ? "Arjun is replying..." : "Ask about menu, catering, rooms…"}
+        placeholder={loading ? "Arjun is replying..." : translating ? "Translating…" : "Ask about menu, catering, rooms…"}
         autoComplete="off"
         style={{
           flex: 1,
@@ -477,6 +495,7 @@ const ChatInputBar = memo(function ChatInputBar({
         onFocus={e => e.currentTarget.style.borderColor = "#c79a3a"}
         onBlur={e => e.currentTarget.style.borderColor = "transparent"}
       />
+      <VoiceMicButton lang={lang} disabled={loading || translating} onInterim={setInput} onSpoken={sendSpoken} size={38} />
       <button
         type="button"
         onClick={handleSend}
@@ -626,8 +645,8 @@ export default function SangamHotels() {
     sendChatRef.current(`I would like to swap and customize dishes in the ${sectionTitle} section`);
   }, []);
 
-  const handleSendInput = useCallback((text: string) => {
-    sendChatRef.current(text);
+  const handleSendInput = useCallback((text: string, displayText?: string) => {
+    sendChatRef.current(text, displayText);
   }, []);
 
   function handleChipClick(ct: { label: string; text: string; isCalendar?: boolean }) {
@@ -1923,7 +1942,7 @@ export default function SangamHotels() {
           />
 
           {/* Input */}
-          <ChatInputBar onSend={handleSendInput} loading={chatLoading} />
+          <ChatInputBar onSend={handleSendInput} loading={chatLoading} lang={chatLang} />
         </div>
       )}
 
